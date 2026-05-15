@@ -1,2 +1,2 @@
 gstreamer-bundle
-PyQt6
+PyGObject>=3.42

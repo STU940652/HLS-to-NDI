@@ -1,144 +1,53 @@
-# HLS → NDI Player
+# GTK + GStreamer NDI Player
 
-A desktop application that ingests an HLS stream or VOD URL, displays it in a
-window, and simultaneously outputs it as an NDI source — even while paused
-(freeze on last frame).
+Desktop player that:
 
-Built with **Python 3**, **PyQt6**, and **GStreamer** (gst-ndi plugin).
-
----
+- Decodes a URI with **`uridecodebin3`**
+- Previews video in a **GTK 4** window (`gtk4paintablesink` → `Gtk.Video`, or `gtksink` / `glimagesink` fallback)
+- Sends A/V to **NDI** from a **second pipeline** that stays in **PLAYING**, bridged with **`intervideosink` / `interaudiosrc`** and **`interaudiosink` / `interaudiosrc`** on channels `gtk_ndi_player_video` / `gtk_ndi_player_audio` (see [`app/gst_utils.py`](app/gst_utils.py))
 
 ## Requirements
 
-### System packages
+- **Python 3.10+**
+- **GStreamer 1.x** with Python bindings via **PyGObject**
+- **GTK 4** and **GStreamer GTK sinks** for preview (`gtk4paintablesink` or `gtksink`)
+- **NDI GStreamer plugin** providing `ndisink` (plugin name and pad layout vary by vendor build)
 
-| Package | Notes |
-|---|---|
-| GStreamer 1.x | Core runtime |
-| gst-plugins-good | `souphttpsrc`, `videoconvert`, etc. |
-| gst-plugins-bad | `hlsdemux`, `glsinkbin`, `videoscale` |
-| gst-plugins-ugly | H.264 decoder fallback |
-| gst-libav / gst-plugins-ffmpeg | `avdec_h264`, wide codec support |
-| **gst-plugin-ndi** | `ndisink` — see note below |
-| NDI SDK runtime | Must be installed separately |
+### Windows (typical: MSYS2 / gstreamer.dev)
 
-#### Ubuntu / Debian
-```bash
-sudo apt install \
-  gstreamer1.0-tools \
-  gstreamer1.0-plugins-good \
-  gstreamer1.0-plugins-bad \
-  gstreamer1.0-plugins-ugly \
-  gstreamer1.0-libav \
-  python3-gi python3-gst-1.0
-```
+Install GStreamer development/full runtime, GTK 4, PyGObject, and an NDI plugin that registers `ndisink`. Ensure `gst-inspect-1.0 ndisink` works in the same environment you use to run Python.
 
-#### macOS (Homebrew)
-```bash
-brew install gstreamer gst-plugins-good gst-plugins-bad \
-             gst-plugins-ugly gst-libav
-```
+### Linux
 
-#### Windows
-Use the official GStreamer MSVC installer from https://gstreamer.freedesktop.org/
+Install distro packages for `gstreamer1.0-plugins-base`, `gstreamer1.0-plugins-good`, GTK 4, GObject introspection, PyGObject, and your NDI plugin package.
 
----
-
-### gst-plugin-ndi (ndisink)
-
-The `ndisink` GStreamer element comes from the community plugin:
-
-```
-https://github.com/teltek/gst-plugin-ndi
-```
-
-You must also install the **NDI SDK** runtime from NewTek/Vizrt:
-```
-https://ndi.video/for-developers/ndi-sdk/
-```
-
-After installing the SDK, build and install the plugin:
-```bash
-git clone https://github.com/teltek/gst-plugin-ndi
-cd gst-plugin-ndi
-cargo build --release
-cp target/release/libgstndi.so \
-   $(pkg-config --variable=pluginsdir gstreamer-1.0)/
-```
-
-Verify it's found:
-```bash
-gst-inspect-1.0 ndisink
-```
-
----
-
-### Python packages
+## Install
 
 ```bash
-pip install PyQt6 PyGObject
+pip install -r requirements.txt
 ```
 
-> On Linux, `PyGObject` is often better installed via the system package
-> manager: `sudo apt install python3-gi python3-gi-cairo`.
-
----
-
-## Running
+## Run
 
 ```bash
-python hls_ndi_player.py
+python -m app
 ```
 
----
+or
 
-## Usage
-
-1. Paste an HLS (`*.m3u8`) or direct VOD URL into the URL bar and press **LOAD**.
-2. The stream starts playing automatically and appears in the video area.
-3. The NDI source named **`HLS-NDI-Player`** is immediately visible to any NDI
-   receiver on your local network (NDI Tools, vMix, OBS, Resolume, etc.).
-4. Press **PAUSE** — playback stops but NDI continues broadcasting the last
-   decoded frame (freeze-frame).
-5. While paused, set the **START TC** field (HH:mm:ss.zzz) and press **SET**
-   to jump to that timecode.
-6. Press **PLAY** to resume.
-
----
-
-## Architecture
-
-```
-souphttpsrc ──► decodebin ──► videoconvert ──► videoscale ──► tee ─┬─► queue ──► glsinkbin   (window)
-                                                                     └─► queue ──► ndisink     (NDI)
+```bash
+python app/main.py
 ```
 
-- `souphttpsrc` handles HTTP/HTTPS, including chunked HLS playlists.
-- `decodebin` auto-selects the right demuxer and decoder for `.m3u8` (via
-  `hlsdemux`) and plain `.ts` / `.mp4` VOD files.
-- A `tee` element splits the decoded video into two queued branches so the
-  display and NDI sinks run independently.
-- When GStreamer is in `PAUSED` state, both sinks retain the last pushed buffer,
-  so NDI receivers see a frozen frame rather than signal loss.
+## Controls
 
----
-
-## Customising the NDI source name
-
-Edit the constant near the top of `hls_ndi_player.py`:
-
-```python
-NDI_SOURCE_NAME = "HLS-NDI-Player"
-```
-
----
+- **Stream URL** — HTTP(S) HLS/VOD, `file://`, `rtsp://`, etc.
+- **Play / Pause / Stop** — transport for the **main** playback pipeline only; the **NDI** pipeline keeps running for the app lifetime.
+- **Timeline slider** — scrub when the stream reports a finite duration and is seekable (many live HLS streams are not seekable).
+- **Go to time** — seek to `H:MM:SS.mmm`, `MM:SS`, or seconds (e.g. `90.5`). Uses an accurate seek (`ACCURATE`) for this control.
 
 ## Troubleshooting
 
-| Symptom | Fix |
-|---|---|
-| `ndisink` not found | Build & install gst-plugin-ndi; verify with `gst-inspect-1.0 ndisink` |
-| Black video window | Try replacing `glsinkbin` with `autovideosink` in the pipeline code |
-| No audio | Audio branch is not wired by design; add `audioconvert ! autoaudiosink` in `_on_pad_added` for audio |
-| HLS playlist errors | Some CDNs block non-browser user-agents; set `src.set_property("user-agent", …)` |
-| Seek bar stays grey | Stream is live HLS with no duration — seeking is unavailable for live streams |
+- **`Missing GStreamer plugins`** — install the indicated elements; URI decode requires **`uridecodebin3`** (`gst-inspect-1.0 uridecodebin3`).
+- **`NDI output unavailable`** — `gst-inspect-1.0 ndisinkcombiner` and `gst-inspect-1.0 ndisink` must succeed. The NDI path is `inter* → ndisinkcombiner → ndisink` (see your working `gst-launch-1.0` with `combiner ! ndisink` and `! combiner.audio`).
+- **No video** — ensure `gst-inspect-1.0 gtk4paintablesink` or `gtksink` or `glimagesink` exists.
