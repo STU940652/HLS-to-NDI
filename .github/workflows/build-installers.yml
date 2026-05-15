@@ -149,21 +149,25 @@ jobs:
           $wixBuild = Join-Path $PWD.Path "build/wix"
           New-Item -ItemType Directory -Force -Path $wixBuild | Out-Null
 
+          # -sreg: skip COM self-registration probes (avoids HEAT5150 spam on PE binaries).
           heat.exe dir $pyDir `
             -cg AppFiles `
             -gg `
             -sfrag `
             -srd `
             -scom `
+            -sreg `
             -dr INSTALLFOLDER `
             -var var.SourceDir `
             -out (Join-Path $wixBuild "AppFiles.wxs")
 
+          # candle: multiple .wxs inputs require -out to be a directory ending with \.
+          $candleOutDir = $wixBuild.TrimEnd('\', '/') + '\'
           candle.exe `
             -arch x64 `
             "-dSourceDir=$pyDir" `
             "-dProductVersion=$env:PRODUCT_VERSION" `
-            -out $wixBuild `
+            -out $candleOutDir `
             (Join-Path $wixBuild "AppFiles.wxs") `
             (Join-Path $PWD.Path "packaging/windows/Product.wxs")
 

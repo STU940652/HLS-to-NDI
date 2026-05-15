@@ -1,5 +1,2 @@
-# Windows / macOS: `gstreamer-bundle` pulls wheels that include PyGObject (`gi`); do not
-# install PyGObject from PyPI there — it has no Windows wheels and builds from source.
-# Linux: use distro GTK/GStreamer + PyGObject (pip or packages).
 gstreamer-bundle
-PyGObject>=3.42; sys_platform == "linux"
+PyGObject>=3.42; sys_platform == 'darwin' or sys_platform == "linux"
