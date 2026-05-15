@@ -17,6 +17,9 @@ permissions:
   contents: write
 
 env:
+  # GitHub-hosted runners: silence Node 20 deprecation for actions/runner-plugin (checkout, setup-python, etc.)
+  # https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
   PYTHON_VERSION: "3.12"
   PYINSTALLER_SPEC: packaging/pyinstaller/HLS_NDI_Player.spec
 

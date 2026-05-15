@@ -13,9 +13,13 @@ Desktop player that:
 - **GTK 4** and **GStreamer GTK sinks** for preview (`gtk4paintablesink` or `gtksink`)
 - **NDI GStreamer plugin** providing `ndisink` (plugin name and pad layout vary by vendor build)
 
-### Windows (typical: MSYS2 / gstreamer.dev)
+### Windows (pip wheels)
 
-Install GStreamer development/full runtime, GTK 4, PyGObject, and an NDI plugin that registers `ndisink`. Ensure `gst-inspect-1.0 ndisink` works in the same environment you use to run Python.
+`pip install -r requirements.txt` installs **gstreamer-bundle** (GTK, GStreamer, and bundled `gi` / PyGObject). For NDI you still need an `ndisink` plugin and runtime that work in that environment (`gst-inspect-1.0 ndisink`).
+
+### Windows (MSYS2 / gstreamer.dev)
+
+Alternatively install GStreamer, GTK 4, PyGObject, and your NDI plugin in that stack; ensure `gst-inspect-1.0 ndisink` matches the Python environment you use.
 
 ### Linux
 
