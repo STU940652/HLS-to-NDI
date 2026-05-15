@@ -1,0 +1,2 @@
+# Frozen / CI installer builds (not required for normal dev installs).
+pyinstaller>=6.10

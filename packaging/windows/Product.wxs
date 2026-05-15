@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  WiX 3 fragment: main product. ComponentGroup "AppFiles" is produced by heat.exe
+  harvesting the PyInstaller onedir (see workflow).
+-->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Product
+    Id="*"
+    Name="HLS NDI Player"
+    Language="1033"
+    Version="$(var.ProductVersion)"
+    Manufacturer="HLS NDI Player"
+    UpgradeCode="d6e7f8a9-2b3c-4d5e-8f90-1a2b3c4d5e6f">
+    <Package
+      InstallerVersion="200"
+      Compressed="yes"
+      InstallScope="perMachine"
+      Platform="x64"
+      Description="GTK + GStreamer HLS to NDI player" />
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+
+    <MediaTemplate EmbedCab="yes" />
+
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFiles64Folder">
+        <Directory Id="INSTALLFOLDER" Name="HLS NDI Player" />
+      </Directory>
+    </Directory>
+
+    <Feature Id="MainFeature" Title="HLS NDI Player" Level="1">
+      <ComponentGroupRef Id="AppFiles" />
+    </Feature>
+  </Product>
+</Wix>

@@ -1,0 +1,200 @@
+# PyInstaller frozen builds: Windows MSI (WiX) + macOS DMG (hdiutil).
+# Modeled on trimmer/.github/workflows/build.yml, updated for current Actions + pip.
+
+name: Build installers
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+concurrency:
+  group: build-installers-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+env:
+  PYTHON_VERSION: "3.12"
+  PYINSTALLER_SPEC: packaging/pyinstaller/HLS_NDI_Player.spec
+
+jobs:
+  version:
+    name: Compute version
+    runs-on: ubuntu-latest
+    outputs:
+      package: ${{ steps.v.outputs.package }}
+      product_msi: ${{ steps.v.outputs.product_msi }}
+    steps:
+      - id: v
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            PKG="${GITHUB_REF#refs/tags/v}"
+          else
+            PKG="0.0.${GITHUB_RUN_NUMBER}-dev"
+          fi
+
+          NUMERIC="${PKG%%-*}"
+          IFS='.' read -r MAJ MIN PAT <<<"${NUMERIC}"
+          MAJ=${MAJ:-0}
+          MIN=${MIN:-0}
+          PAT=${PAT:-${GITHUB_RUN_NUMBER}}
+
+          if ! [[ "$MAJ" =~ ^[0-9]+$ ]]; then MAJ=0; fi
+          if ! [[ "$MIN" =~ ^[0-9]+$ ]]; then MIN=0; fi
+          if ! [[ "$PAT" =~ ^[0-9]+$ ]]; then PAT=${GITHUB_RUN_NUMBER}; fi
+
+          if (( MAJ > 255 )); then MAJ=255; fi
+          if (( MIN > 255 )); then MIN=255; fi
+          if (( PAT > 65535 )); then PAT=65535; fi
+
+          MSI="${MAJ}.${MIN}.${PAT}"
+          echo "package=$PKG" >> "$GITHUB_OUTPUT"
+          echo "product_msi=$MSI" >> "$GITHUB_OUTPUT"
+          echo "PACKAGE=$PKG PRODUCT_MSI=$MSI"
+
+  macos:
+    name: macOS DMG
+    needs: version
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-build.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-build.txt
+
+      - name: PyInstaller
+        run: pyinstaller "$PYINSTALLER_SPEC" --clean --noconfirm
+
+      - name: Create DMG
+        env:
+          PKG_VERSION: ${{ needs.version.outputs.package }}
+        run: |
+          set -euo pipefail
+          APP="dist/HLS NDI Player.app"
+          test -d "$APP"
+          DMG="dist/HLS_NDI_Player-${PKG_VERSION}-macOS.dmg"
+          rm -f "$DMG"
+          hdiutil create -volname "HLS NDI Player" -srcfolder "$APP" -ov -format UDZO "$DMG"
+          ls -la dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HLS_NDI_Player-macos
+          path: dist/HLS_NDI_Player-*-macOS.dmg
+
+  windows:
+    name: Windows MSI
+    needs: version
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-build.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-build.txt
+
+      - name: PyInstaller
+        run: pyinstaller "$env:PYINSTALLER_SPEC" --clean --noconfirm
+
+      - name: Install WiX Toolset v3.14
+        shell: pwsh
+        run: |
+          $wixZip = "$env:RUNNER_TEMP/wix314-binaries.zip"
+          Invoke-WebRequest -Uri "https://github.com/wixtoolset/wix3/releases/download/wix3141rtm/wix314-binaries.zip" -OutFile $wixZip
+          $wixRoot = "$env:RUNNER_TEMP/wix314"
+          Expand-Archive -Path $wixZip -DestinationPath $wixRoot
+          if (-not (Test-Path (Join-Path $wixRoot "candle.exe"))) {
+            $nested = Get-ChildItem $wixRoot -Directory | Select-Object -First 1
+            if ($nested) { $wixRoot = $nested.FullName }
+          }
+          Add-Content -Path $env:GITHUB_PATH -Value $wixRoot
+
+      - name: Build MSI (heat + candle + light)
+        shell: pwsh
+        env:
+          PRODUCT_VERSION: ${{ needs.version.outputs.product_msi }}
+          PKG_VERSION: ${{ needs.version.outputs.package }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $pyDir = Join-Path $PWD.Path "dist/HLS_NDI_Player"
+          if (-not (Test-Path $pyDir)) { throw "Missing PyInstaller output: $pyDir" }
+
+          $wixBuild = Join-Path $PWD.Path "build/wix"
+          New-Item -ItemType Directory -Force -Path $wixBuild | Out-Null
+
+          heat.exe dir $pyDir `
+            -cg AppFiles `
+            -gg `
+            -sfrag `
+            -srd `
+            -scom `
+            -dr INSTALLFOLDER `
+            -var var.SourceDir `
+            -out (Join-Path $wixBuild "AppFiles.wxs")
+
+          candle.exe `
+            -arch x64 `
+            "-dSourceDir=$pyDir" `
+            "-dProductVersion=$env:PRODUCT_VERSION" `
+            -out $wixBuild `
+            (Join-Path $wixBuild "AppFiles.wxs") `
+            (Join-Path $PWD.Path "packaging/windows/Product.wxs")
+
+          $msiName = "HLS_NDI_Player-$env:PKG_VERSION-windows-x64.msi"
+          $msiPath = Join-Path $PWD.Path "dist/$msiName"
+          light.exe `
+            -out $msiPath `
+            (Join-Path $wixBuild "AppFiles.wixobj") `
+            (Join-Path $wixBuild "Product.wixobj")
+
+          Get-Item $msiPath | Format-List *
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HLS_NDI_Player-windows-msi
+          path: dist/HLS_NDI_Player-*-windows-x64.msi
+
+  release:
+    name: Attach to GitHub Release
+    needs: [version, macos, windows]
+    runs-on: ubuntu-latest
+    if: github.ref_type == 'tag'
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: HLS_NDI_Player-macos
+          path: release-assets
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: HLS_NDI_Player-windows-msi
+          path: release-assets
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: release-assets/*
+          generate_release_notes: true
