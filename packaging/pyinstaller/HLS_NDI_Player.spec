@@ -19,6 +19,18 @@ datas: list = []
 binaries: list = []
 hiddenimports: list = []
 
+
+def _setup_build_gstreamer_env() -> None:
+    try:
+        import gstreamer_libs
+
+        gstreamer_libs.setup_python_environment()
+    except Exception:
+        pass
+
+
+_setup_build_gstreamer_env()
+
 # Official GStreamer wheel packages (binaries + typelibs + plugins).
 _gst_packages = [
     "gstreamer_libs",
@@ -60,17 +72,52 @@ _gi_typelib_datas: dict[str, tuple[str, str]] = {}
 def _mirror_wheel_typelibs(package_name: str) -> None:
     try:
         module = importlib.import_module(package_name)
-        typelib_dir = Path(module.__file__).resolve().parent / "lib" / "girepository-1.0"
-        if not typelib_dir.is_dir():
-            return
-        for typelib in sorted(typelib_dir.glob("*.typelib")):
-            _gi_typelib_datas[typelib.name] = (str(typelib), "gi_typelibs")
+        package_root = Path(module.__file__).resolve().parent
+        for sub in ("lib/girepository-1.0", "share/girepository-1.0"):
+            typelib_dir = package_root / sub
+            if not typelib_dir.is_dir():
+                continue
+            for typelib in sorted(typelib_dir.glob("*.typelib")):
+                _gi_typelib_datas[typelib.name] = (str(typelib), "gi_typelibs")
     except Exception:
         pass
 
 
+def _collect_typelib_via_gi(namespace: str, version: str) -> None:
+    """Resolve a typelib path through gi (needs gstreamer env) and mirror to gi_typelibs."""
+    try:
+        import gi
+
+        try:
+            gi.require_version("GIRepository", "3.0")
+            from gi.repository import GIRepository
+
+            repo = GIRepository.Repository()
+            repo.require(namespace, version, GIRepository.RepositoryLoadFlags.LAZY)
+        except ValueError:
+            gi.require_version("GIRepository", "2.0")
+            from gi.repository import GIRepository
+
+            repo = GIRepository.Repository.get_default()
+            repo.require(
+                namespace,
+                version,
+                GIRepository.RepositoryLoadFlags.IREPOSITORY_LOAD_FLAG_LAZY,
+            )
+
+        typelib = repo.get_typelib_path(namespace)
+        if typelib and os.path.isfile(typelib):
+            _gi_typelib_datas[Path(typelib).name] = (typelib, "gi_typelibs")
+    except Exception as exc:
+        print(f"Warning: could not collect typelib {namespace}: {exc}")
+
+
 for _pkg in _gst_packages:
     _mirror_wheel_typelibs(_pkg)
+
+if sys.platform == "darwin":
+    for _ns in ("GLibUnix", "GioUnix"):
+        _collect_typelib_via_gi(_ns, "2.0")
 
 datas += list(_gi_typelib_datas.values())
 

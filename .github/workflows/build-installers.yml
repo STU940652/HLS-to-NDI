@@ -83,11 +83,16 @@ jobs:
       - name: Verify GObject typelibs in frozen bundle
         run: |
           set -euo pipefail
-          typelibs="dist/HLS NDI Player.app/Contents/Frameworks/gi_typelibs"
-          test -f "$typelibs/Gtk-4.0.typelib"
-          test -f "$typelibs/Gst-1.0.typelib"
-          test -f "$typelibs/GLibUnix-2.0.typelib"
-          test -f "$typelibs/GioUnix-2.0.typelib"
+          APP="dist/HLS NDI Player.app"
+          for name in Gtk-4.0.typelib Gst-1.0.typelib GLibUnix-2.0.typelib GioUnix-2.0.typelib; do
+            path="$(find "$APP" -name "$name" -print -quit)"
+            if [ -z "$path" ]; then
+              echo "Missing typelib: $name"
+              find "$APP" -name '*.typelib' | head -30
+              exit 1
+            fi
+            echo "Found $name at $path"
+          done
 
       - name: Create DMG
         env:
@@ -132,11 +137,16 @@ jobs:
       - name: Verify GObject typelibs in frozen bundle
         run: |
           set -euo pipefail
-          typelibs="dist/HLS NDI Player.app/Contents/Frameworks/gi_typelibs"
-          test -f "$typelibs/Gtk-4.0.typelib"
-          test -f "$typelibs/Gst-1.0.typelib"
-          test -f "$typelibs/GLibUnix-2.0.typelib"
-          test -f "$typelibs/GioUnix-2.0.typelib"
+          APP="dist/HLS NDI Player.app"
+          for name in Gtk-4.0.typelib Gst-1.0.typelib GLibUnix-2.0.typelib GioUnix-2.0.typelib; do
+            path="$(find "$APP" -name "$name" -print -quit)"
+            if [ -z "$path" ]; then
+              echo "Missing typelib: $name"
+              find "$APP" -name '*.typelib' | head -30
+              exit 1
+            fi
+            echo "Found $name at $path"
+          done
 
       - name: Create DMG
         env:
