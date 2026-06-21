@@ -136,6 +136,81 @@ def _find_gir_in_wheels(gir_name: str) -> Path | None:
     return None
 
 
+def _find_gir_on_system(gir_name: str) -> Path | None:
+    """Unix-only GIR files ship with Homebrew glib, not in gstreamer wheels."""
+    brew = shutil.which("brew")
+    if brew:
+        try:
+            prefix = subprocess.run(
+                [brew, "--prefix", "glib"],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+            if prefix:
+                candidate = Path(prefix) / "share" / "gir-1.0" / gir_name
+                if candidate.is_file():
+                    return candidate
+        except Exception:
+            pass
+
+    for prefix in (
+        os.environ.get("HOMEBREW_PREFIX"),
+        "/opt/homebrew",
+        "/usr/local",
+    ):
+        if not prefix:
+            continue
+        candidate = Path(prefix) / "share" / "gir-1.0" / gir_name
+        if candidate.is_file():
+            return candidate
+
+    for cellar in (Path("/opt/homebrew/Cellar"), Path("/usr/local/Cellar")):
+        if not cellar.is_dir():
+            continue
+        for gir_dir in cellar.glob("glib/*/share/gir-1.0"):
+            candidate = gir_dir / gir_name
+            if candidate.is_file():
+                return candidate
+    return None
+
+
+def _find_gir(gir_name: str) -> Path | None:
+    return _find_gir_in_wheels(gir_name) or _find_gir_on_system(gir_name)
+
+
+def _find_system_typelib(typelib_name: str) -> Path | None:
+    brew = shutil.which("brew")
+    if brew:
+        try:
+            prefix = subprocess.run(
+                [brew, "--prefix", "glib"],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+            if prefix:
+                for sub in ("lib/girepository-1.0", "share/girepository-1.0"):
+                    candidate = Path(prefix) / sub / typelib_name
+                    if candidate.is_file():
+                        return candidate
+        except Exception:
+            pass
+
+    for prefix in (
+        os.environ.get("HOMEBREW_PREFIX"),
+        "/opt/homebrew",
+        "/usr/local",
+    ):
+        if not prefix:
+            continue
+        for sub in ("lib/girepository-1.0", "share/girepository-1.0"):
+            candidate = Path(prefix) / sub / typelib_name
+            if candidate.is_file():
+                return candidate
+    return None
+
+
 def _collect_darwin_unix_typelibs() -> None:
     """GLibUnix/GioUnix typelibs are macOS-only and often ship as .gir without .typelib."""
     if sys.platform != "darwin":
@@ -163,15 +238,22 @@ def _collect_darwin_unix_typelibs() -> None:
         raise SystemExit(
             "g-ir-compiler not found on PATH. "
             "Install gobject-introspection (e.g. brew install gobject-introspection) "
-            "to compile GLibUnix/GioUnix typelibs from .gir files in the gstreamer wheels."
+            "to compile GLibUnix/GioUnix typelibs from Homebrew glib .gir files."
         )
 
     for base in missing:
         gir_name = f"{base}.gir"
         typelib_name = f"{base}.typelib"
-        gir_path = _find_gir_in_wheels(gir_name)
+        gir_path = _find_gir(gir_name)
         if gir_path is None:
-            print(f"Warning: could not find {gir_name} in gstreamer wheels")
+            system_typelib = _find_system_typelib(typelib_name)
+            if system_typelib is not None:
+                _gi_typelib_datas[typelib_name] = (str(system_typelib), "gi_typelibs")
+                continue
+            print(
+                f"Warning: could not find {gir_name} in gstreamer wheels "
+                "or Homebrew glib (brew install gobject-introspection)"
+            )
             continue
 
         try:
@@ -185,6 +267,9 @@ def _collect_darwin_unix_typelibs() -> None:
             _gi_typelib_datas[typelib_name] = (str(out_typelib), "gi_typelibs")
         except Exception as exc:
             print(f"Warning: g-ir-compiler for {gir_name}: {exc}")
+            system_typelib = _find_system_typelib(typelib_name)
+            if system_typelib is not None:
+                _gi_typelib_datas[typelib_name] = (str(system_typelib), "gi_typelibs")
 
     still_missing = [base for base in unix_bases if f"{base}.typelib" not in _gi_typelib_datas]
     if still_missing:
