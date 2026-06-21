@@ -1,2 +1,3 @@
 gstreamer-bundle
-PyGObject>=3.42; sys_platform == 'darwin' or sys_platform == "linux"
+# PyGObject/gi come from gstreamer_python inside gstreamer-bundle; a separate
+# PyGObject pip install shadows the wheel gi and breaks PyInstaller on macOS.
