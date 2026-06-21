@@ -233,7 +233,7 @@ jobs:
 
   release:
     name: Attach to GitHub Release
-    needs: [version, macos, windows]
+    needs: [version, macos, macos-15-intel, windows]
     runs-on: ubuntu-latest
     if: github.ref_type == 'tag'
     steps:
