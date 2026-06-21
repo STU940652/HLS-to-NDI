@@ -97,6 +97,46 @@ jobs:
           name: HLS_NDI_Player-macos
           path: dist/HLS_NDI_Player-*-macOS.dmg
 
+  macos-15-intel:
+    name: macOS DMG 15-intel
+    needs: version
+    runs-on: macos-15-intel
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-build.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-build.txt
+
+      - name: PyInstaller
+        run: pyinstaller "$PYINSTALLER_SPEC" --clean --noconfirm
+
+      - name: Create DMG
+        env:
+          PKG_VERSION: ${{ needs.version.outputs.package }}
+        run: |
+          set -euo pipefail
+          APP="dist/HLS NDI Player.app"
+          test -d "$APP"
+          DMG="dist/HLS_NDI_Player-${PKG_VERSION}-macOS-15-intel.dmg"
+          rm -f "$DMG"
+          hdiutil create -volname "HLS NDI Player" -srcfolder "$APP" -ov -format UDZO "$DMG"
+          ls -la dist
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: HLS_NDI_Player-macos-15-intel
+          path: dist/HLS_NDI_Player-*-macOS-15-intel.dmg
+
   windows:
     name: Windows MSI
     needs: version

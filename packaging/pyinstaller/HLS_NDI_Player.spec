@@ -54,6 +54,17 @@ hiddenimports = list(
     dict.fromkeys(
         hiddenimports
         + [
+            # Imported dynamically inside gstreamer_libs.gstreamer_env().
+            "gstreamer_gtk",
+            "gstreamer_libs",
+            "gstreamer_python",
+            "gstreamer_plugins",
+            "gstreamer_plugins_gpl",
+            "gstreamer_plugins_gpl_restricted",
+            "gstreamer_plugins_restricted",
+            "gstreamer_plugins_libs",
+            "gstreamer_cli",
+            "gstreamer_ext_runtime",
             "gi.repository.GObject",
             "gi.repository.GLib",
             "gi.repository.Gst",
