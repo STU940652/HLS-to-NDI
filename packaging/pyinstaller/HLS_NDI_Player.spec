@@ -2,6 +2,7 @@
 """PyInstaller spec for GTK + GStreamer (official wheels) + PyGObject."""
 from __future__ import annotations
 
+import importlib
 import os
 import sys
 from pathlib import Path
@@ -52,16 +53,26 @@ for _pkg in ("gi", "PyGObject"):
         pass
 
 # PyInstaller's pyi_rth_gi hook sets GI_TYPELIB_PATH to gi_typelibs only (after our
-# runtime hook). Gtk typelibs live in gstreamer_gtk, so mirror them into gi_typelibs.
-try:
-    import gstreamer_gtk
+# runtime hook). Mirror wheel typelibs there so Gtk, Gst, GLib, etc. are all found.
+_gi_typelib_datas: dict[str, tuple[str, str]] = {}
 
-    _gtk_typelib_dir = Path(gstreamer_gtk.__file__).resolve().parent / "lib" / "girepository-1.0"
-    if _gtk_typelib_dir.is_dir():
-        for _typelib in sorted(_gtk_typelib_dir.glob("*.typelib")):
-            datas.append((str(_typelib), "gi_typelibs"))
-except Exception:
-    pass
+
+def _mirror_wheel_typelibs(package_name: str) -> None:
+    try:
+        module = importlib.import_module(package_name)
+        typelib_dir = Path(module.__file__).resolve().parent / "lib" / "girepository-1.0"
+        if not typelib_dir.is_dir():
+            return
+        for typelib in sorted(typelib_dir.glob("*.typelib")):
+            _gi_typelib_datas[typelib.name] = (str(typelib), "gi_typelibs")
+    except Exception:
+        pass
+
+
+for _pkg in ("gstreamer_libs", "gstreamer_python", "gstreamer_gtk"):
+    _mirror_wheel_typelibs(_pkg)
+
+datas += list(_gi_typelib_datas.values())
 
 hiddenimports = list(
     dict.fromkeys(

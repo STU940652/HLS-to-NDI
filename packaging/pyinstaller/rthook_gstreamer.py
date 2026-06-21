@@ -4,7 +4,7 @@ The wheel stack expects `gstreamer_libs.setup_python_environment()` before PyGOb
 imports. Normal installs get that from site-packages `.pth`; frozen apps do not.
 
 PyInstaller's pyi_rth_gi hook runs after this hook and sets GI_TYPELIB_PATH to
-gi_typelibs only. Gtk typelibs must be copied there at build time (see spec).
+gi_typelibs only. Wheel typelibs are mirrored there at build time (see spec).
 
 Frozen bundles flatten the wheel layout: gi is not nested under gstreamer_python, so
 importing gstreamer_python (which walks for Lib/site-packages/gi) fails on macOS.

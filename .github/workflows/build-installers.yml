@@ -80,11 +80,12 @@ jobs:
       - name: PyInstaller
         run: pyinstaller "$PYINSTALLER_SPEC" --clean --noconfirm
 
-      - name: Verify Gtk typelibs in frozen bundle
+      - name: Verify GObject typelibs in frozen bundle
         run: |
           set -euo pipefail
-          typelib="dist/HLS NDI Player.app/Contents/Frameworks/gi_typelibs/Gtk-4.0.typelib"
-          test -f "$typelib"
+          typelibs="dist/HLS NDI Player.app/Contents/Frameworks/gi_typelibs"
+          test -f "$typelibs/Gtk-4.0.typelib"
+          test -f "$typelibs/Gst-1.0.typelib"
 
       - name: Create DMG
         env:
@@ -126,11 +127,12 @@ jobs:
       - name: PyInstaller
         run: pyinstaller "$PYINSTALLER_SPEC" --clean --noconfirm
 
-      - name: Verify Gtk typelibs in frozen bundle
+      - name: Verify GObject typelibs in frozen bundle
         run: |
           set -euo pipefail
-          typelib="dist/HLS NDI Player.app/Contents/Frameworks/gi_typelibs/Gtk-4.0.typelib"
-          test -f "$typelib"
+          typelibs="dist/HLS NDI Player.app/Contents/Frameworks/gi_typelibs"
+          test -f "$typelibs/Gtk-4.0.typelib"
+          test -f "$typelibs/Gst-1.0.typelib"
 
       - name: Create DMG
         env:
@@ -172,13 +174,16 @@ jobs:
       - name: PyInstaller
         run: pyinstaller "$env:PYINSTALLER_SPEC" --clean --noconfirm
 
-      - name: Verify Gtk typelibs in frozen bundle
+      - name: Verify GObject typelibs in frozen bundle
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          $typelib = Join-Path $PWD.Path "dist/HLS_NDI_Player/_internal/gi_typelibs/Gtk-4.0.typelib"
-          if (-not (Test-Path $typelib)) {
-            throw "Missing Gtk typelib in gi_typelibs: $typelib"
+          $typelibs = Join-Path $PWD.Path "dist/HLS_NDI_Player/_internal/gi_typelibs"
+          if (-not (Test-Path (Join-Path $typelibs "Gtk-4.0.typelib"))) {
+            throw "Missing Gtk typelib in gi_typelibs"
+          }
+          if (-not (Test-Path (Join-Path $typelibs "Gst-1.0.typelib"))) {
+            throw "Missing Gst typelib in gi_typelibs"
           }
 
       - name: Install WiX Toolset v3.14
