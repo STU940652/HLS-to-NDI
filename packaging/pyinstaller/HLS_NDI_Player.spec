@@ -69,7 +69,7 @@ def _mirror_wheel_typelibs(package_name: str) -> None:
         pass
 
 
-for _pkg in ("gstreamer_libs", "gstreamer_python", "gstreamer_gtk"):
+for _pkg in _gst_packages:
     _mirror_wheel_typelibs(_pkg)
 
 datas += list(_gi_typelib_datas.values())
@@ -91,6 +91,8 @@ hiddenimports = list(
             "gstreamer_ext_runtime",
             "gi.repository.GObject",
             "gi.repository.GLib",
+            "gi.repository.GLibUnix",
+            "gi.repository.GioUnix",
             "gi.repository.Gst",
             "gi.repository.Gtk",
             "gi.repository.Gdk",

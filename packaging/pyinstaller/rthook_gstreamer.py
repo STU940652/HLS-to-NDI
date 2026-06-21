@@ -51,6 +51,16 @@ def _register_windows_dll_dir(path: str) -> None:
     os.environ["PYGI_DLL_DIRS"] = path + (os.pathsep + current if current else "")
 
 
+_FROZEN_SKIP_ENV_KEYS = frozenset(
+    {
+        # gstreamer_gtk sets this to the bundle Frameworks dir; breaks child python3
+        # processes (e.g. gst-plugin-scanner) and stdlib resolution (encodings).
+        "PYTHONPATH",
+        "GST_PYTHONPATH_1_0",
+    }
+)
+
+
 def _apply_frozen_gstreamer_environment(root: str) -> None:
     env = os.environ.copy()
     dll_directories: list[str] = []
@@ -61,6 +71,8 @@ def _apply_frozen_gstreamer_environment(root: str) -> None:
         except ImportError:
             continue
         for key, value in getattr(module, "environment", {}).items():
+            if key in _FROZEN_SKIP_ENV_KEYS:
+                continue
             if sys.platform in ("win32", "darwin") and key == "LD_LIBRARY_PATH":
                 continue
             if sys.platform in ("win32", "darwin") and key == "PATH" and isinstance(value, str):
@@ -84,6 +96,8 @@ def _apply_frozen_gstreamer_environment(root: str) -> None:
                 _prepend_to_env(env, key, path)
 
     os.environ.update(env)
+    for key in _FROZEN_SKIP_ENV_KEYS:
+        os.environ.pop(key, None)
 
     if sys.platform == "win32":
         for path in dll_directories:
