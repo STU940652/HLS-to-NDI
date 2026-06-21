@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import sys
+from pathlib import Path
 
 from PyInstaller.utils.hooks import collect_all
 
@@ -49,6 +50,18 @@ for _pkg in ("gi", "PyGObject"):
         hiddenimports += h
     except Exception:
         pass
+
+# PyInstaller's pyi_rth_gi hook sets GI_TYPELIB_PATH to gi_typelibs only (after our
+# runtime hook). Gtk typelibs live in gstreamer_gtk, so mirror them into gi_typelibs.
+try:
+    import gstreamer_gtk
+
+    _gtk_typelib_dir = Path(gstreamer_gtk.__file__).resolve().parent / "lib" / "girepository-1.0"
+    if _gtk_typelib_dir.is_dir():
+        for _typelib in sorted(_gtk_typelib_dir.glob("*.typelib")):
+            datas.append((str(_typelib), "gi_typelibs"))
+except Exception:
+    pass
 
 hiddenimports = list(
     dict.fromkeys(

@@ -160,6 +160,15 @@ jobs:
       - name: PyInstaller
         run: pyinstaller "$env:PYINSTALLER_SPEC" --clean --noconfirm
 
+      - name: Verify Gtk typelibs in frozen bundle
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $typelib = Join-Path $PWD.Path "dist/HLS_NDI_Player/_internal/gi_typelibs/Gtk-4.0.typelib"
+          if (-not (Test-Path $typelib)) {
+            throw "Missing Gtk typelib in gi_typelibs: $typelib"
+          }
+
       - name: Install WiX Toolset v3.14
         shell: pwsh
         run: |
@@ -231,6 +240,11 @@ jobs:
       - uses: actions/download-artifact@v5
         with:
           name: HLS_NDI_Player-macos
+          path: release-assets
+          
+      - uses: actions/download-artifact@v5
+        with:
+          name: HLS_NDI_Player-macos-15-intel
           path: release-assets
 
       - uses: actions/download-artifact@v5
