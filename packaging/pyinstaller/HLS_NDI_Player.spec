@@ -99,6 +99,28 @@ def _fix_gir_shared_library_paths(gir_file: Path, out_gir: Path) -> None:
             dst.write(line)
 
 
+def _find_g_ir_compiler() -> str | None:
+    """g-ir-compiler is a build tool (gobject-introspection), not in gstreamer wheels."""
+    found = shutil.which("g-ir-compiler")
+    if found:
+        return found
+    for candidate in (
+        "/opt/homebrew/bin/g-ir-compiler",
+        "/usr/local/bin/g-ir-compiler",
+    ):
+        if os.path.isfile(candidate):
+            return candidate
+    for pkg in _gst_packages:
+        try:
+            root = Path(importlib.import_module(pkg).__file__).resolve().parent
+            for match in root.rglob("g-ir-compiler"):
+                if match.is_file():
+                    return str(match)
+        except Exception:
+            pass
+    return None
+
+
 def _find_gir_in_wheels(gir_name: str) -> Path | None:
     for pkg in _gst_packages:
         try:
@@ -136,9 +158,13 @@ def _collect_darwin_unix_typelibs() -> None:
 
     workroot = _typelib_workdir()
     workroot.mkdir(parents=True, exist_ok=True)
-    compiler = shutil.which("g-ir-compiler")
+    compiler = _find_g_ir_compiler()
     if compiler is None:
-        raise SystemExit("g-ir-compiler not found on PATH (expected from gstreamer_cli)")
+        raise SystemExit(
+            "g-ir-compiler not found on PATH. "
+            "Install gobject-introspection (e.g. brew install gobject-introspection) "
+            "to compile GLibUnix/GioUnix typelibs from .gir files in the gstreamer wheels."
+        )
 
     for base in missing:
         gir_name = f"{base}.gir"
