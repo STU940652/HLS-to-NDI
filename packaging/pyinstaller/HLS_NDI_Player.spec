@@ -15,6 +15,7 @@ from PyInstaller.utils.hooks import collect_all
 spec_dir = SPECPATH
 repo_root = os.path.abspath(os.path.join(spec_dir, os.pardir, os.pardir))
 rthook = os.path.join(spec_dir, "rthook_gstreamer.py")
+hooks_dir = os.path.join(spec_dir, "hooks")
 
 block_cipher = None
 
@@ -48,6 +49,31 @@ _gst_packages = [
 ]
 if sys.platform == "win32":
     _gst_packages.append("gstreamer_msvc_runtime")
+
+
+def _apply_darwin_build_dyld_paths() -> None:
+    """Let PyInstaller GI hooks resolve wheel dylibs during the macOS build."""
+    if sys.platform != "darwin":
+        return
+    lib_dirs: list[str] = []
+    for pkg in _gst_packages:
+        try:
+            root = Path(importlib.import_module(pkg).__file__).resolve().parent
+            for sub in ("lib", "lib64"):
+                candidate = root / sub
+                if candidate.is_dir():
+                    lib_dirs.append(str(candidate))
+        except Exception:
+            pass
+    if not lib_dirs:
+        return
+    for key in ("DYLD_LIBRARY_PATH", "DYLD_FALLBACK_LIBRARY_PATH"):
+        existing = os.environ.get(key, "")
+        merged = os.pathsep.join(lib_dirs) + (os.pathsep + existing if existing else "")
+        os.environ[key] = merged
+
+
+_apply_darwin_build_dyld_paths()
 
 for _pkg in _gst_packages:
     try:
@@ -260,8 +286,15 @@ def _collect_darwin_unix_typelibs() -> None:
             fixed_gir = workroot / gir_name
             _fix_gir_shared_library_paths(gir_path, fixed_gir)
             out_typelib = workroot / typelib_name
+            includedir = gir_path.parent
             subprocess.run(
-                [compiler, str(fixed_gir), "-o", str(out_typelib)],
+                [
+                    compiler,
+                    f"--includedir={includedir}",
+                    str(fixed_gir),
+                    "-o",
+                    str(out_typelib),
+                ],
                 check=True,
             )
             _gi_typelib_datas[typelib_name] = (str(out_typelib), "gi_typelibs")
@@ -308,7 +341,6 @@ hiddenimports = list(
             "gi.repository.Gst",
             "gi.repository.Gtk",
             "gi.repository.Gdk",
-            "gi.repository.GdkPixbuf",
             "gi.repository.Gio",
             "gi.repository.cairo",
             "cairo",
@@ -323,7 +355,7 @@ a = Analysis(
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
-    hookspath=[],
+    hookspath=[hooks_dir],
     hooksconfig={
         "gi": {
             "module-versions": {
