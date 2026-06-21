@@ -80,6 +80,12 @@ jobs:
       - name: PyInstaller
         run: pyinstaller "$PYINSTALLER_SPEC" --clean --noconfirm
 
+      - name: Verify Gtk typelibs in frozen bundle
+        run: |
+          set -euo pipefail
+          typelib="dist/HLS NDI Player.app/Contents/Frameworks/gi_typelibs/Gtk-4.0.typelib"
+          test -f "$typelib"
+
       - name: Create DMG
         env:
           PKG_VERSION: ${{ needs.version.outputs.package }}
@@ -119,6 +125,12 @@ jobs:
 
       - name: PyInstaller
         run: pyinstaller "$PYINSTALLER_SPEC" --clean --noconfirm
+
+      - name: Verify Gtk typelibs in frozen bundle
+        run: |
+          set -euo pipefail
+          typelib="dist/HLS NDI Player.app/Contents/Frameworks/gi_typelibs/Gtk-4.0.typelib"
+          test -f "$typelib"
 
       - name: Create DMG
         env:
