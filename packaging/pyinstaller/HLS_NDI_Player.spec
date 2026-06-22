@@ -84,9 +84,19 @@ for _pkg in _gst_packages:
     except Exception:
         pass
 
-# PyInstaller's pyi_rth_gi hook sets GI_TYPELIB_PATH to gi_typelibs only (after our
-# runtime hook). Mirror wheel typelibs there so Gtk, Gst, GLib, etc. are all found.
-_gi_typelib_datas: dict[str, tuple[str, str]] = {}
+
+def _exclude_gstpython_plugins(entries: list) -> list:
+    """libgstpython loads an embedded Python during plugin scan and breaks frozen apps."""
+    filtered: list = []
+    for entry in entries:
+        source = os.path.basename(str(entry[0])).lower()
+        if "gstpython" in source:
+            continue
+        filtered.append(entry)
+    return filtered
+
+
+binaries = _exclude_gstpython_plugins(binaries)
 
 
 def _typelib_workdir() -> Path:
@@ -94,6 +104,58 @@ def _typelib_workdir() -> Path:
     if workpath:
         return Path(workpath) / "gi_typelib_work"
     return Path(spec_dir) / "_gi_typelib_work"
+
+
+def _build_bundled_gstreamer_registry() -> Path | None:
+    """Pre-scan plugins at build time so runtime does not fork gst-plugin-scanner."""
+    if sys.platform != "darwin":
+        return None
+
+    registry_path = _typelib_workdir() / "gstreamer_registry.bin"
+    registry_path.parent.mkdir(parents=True, exist_ok=True)
+    saved_env = {
+        key: os.environ.get(key)
+        for key in (
+            "GST_REGISTRY_1_0",
+            "GST_REGISTRY",
+            "GST_REGISTRY_FORK",
+            "GST_REGISTRY_UPDATE",
+        )
+    }
+    try:
+        if registry_path.is_file():
+            registry_path.unlink()
+        os.environ["GST_REGISTRY_1_0"] = str(registry_path)
+        os.environ["GST_REGISTRY"] = str(registry_path)
+        os.environ["GST_REGISTRY_FORK"] = "no"
+        os.environ.pop("GST_REGISTRY_UPDATE", None)
+
+        import gi
+
+        gi.require_version("Gst", "1.0")
+        from gi.repository import Gst
+
+        Gst.init(None)
+    except Exception as exc:
+        print(f"Warning: GStreamer registry prebuild failed: {exc}")
+        return None
+    finally:
+        for key, value in saved_env.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
+    return registry_path if registry_path.is_file() else None
+
+
+_bundled_gstreamer_registry = _build_bundled_gstreamer_registry()
+if _bundled_gstreamer_registry is not None:
+    datas.append((str(_bundled_gstreamer_registry), "."))
+
+# PyInstaller's pyi_rth_gi hook sets GI_TYPELIB_PATH to gi_typelibs only (after our
+# runtime hook). Mirror wheel typelibs there so Gtk, Gst, GLib, etc. are all found.
+_gi_typelib_datas: dict[str, tuple[str, str]] = {}
 
 
 def _mirror_wheel_typelibs(package_name: str) -> None:
