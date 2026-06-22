@@ -63,18 +63,13 @@ _FROZEN_SKIP_ENV_KEYS = frozenset(
 _FROZEN_PACKAGE_NAMES = _frozen_gstreamer_packages() + ("gstreamer_python",)
 
 
-def _package_roots(root: str) -> list[str]:
+def _filesystem_package_roots(root: str) -> list[str]:
+    """Discover wheel package dirs under the frozen bundle without importing them."""
     roots: list[str] = []
-    seen: set[str] = set()
     for name in _FROZEN_PACKAGE_NAMES:
-        try:
-            module = importlib.import_module(name)
-            package_root = os.path.dirname(module.__file__)
-        except ImportError:
-            package_root = os.path.join(root, name)
-        if package_root not in seen and os.path.isdir(package_root):
-            roots.append(package_root)
-            seen.add(package_root)
+        candidate = os.path.join(root, name)
+        if os.path.isdir(candidate):
+            roots.append(candidate)
     return roots
 
 
@@ -90,7 +85,7 @@ def _apply_darwin_frozen_gstreamer_environment(root: str) -> None:
     typelib_dirs: list[str] = []
     xdg_data_dirs: list[str] = []
 
-    for package_root in _package_roots(root):
+    for package_root in _filesystem_package_roots(root):
         lib_dir = os.path.join(package_root, "lib")
         if os.path.isdir(lib_dir):
             lib_dirs.append(lib_dir)
@@ -119,11 +114,7 @@ def _apply_darwin_frozen_gstreamer_environment(root: str) -> None:
         os.environ["GST_PLUGIN_PATH_1_0"] = plugins
         os.environ["GST_PLUGIN_SYSTEM_PATH_1_0"] = plugins
 
-    try:
-        libs_root = os.path.dirname(importlib.import_module("gstreamer_libs").__file__)
-    except ImportError:
-        libs_root = os.path.join(root, "gstreamer_libs")
-
+    libs_root = os.path.join(root, "gstreamer_libs")
     scanner = os.path.join(
         libs_root, "libexec", "gstreamer-1.0", "gst-plugin-scanner"
     )
