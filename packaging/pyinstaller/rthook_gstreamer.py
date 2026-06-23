@@ -63,6 +63,21 @@ _FROZEN_SKIP_ENV_KEYS = frozenset(
 _FROZEN_PACKAGE_NAMES = _frozen_gstreamer_packages() + ("gstreamer_python",)
 _PLUGIN_SKIP_PACKAGES = frozenset({"gstreamer_python"})
 
+# NDI Advanced SDK runtime (ndisink loads libndi.dylib from here on macOS).
+_DARWIN_NDI_RUNTIME_V6 = "/Library/NDI SDK for Apple/lib/macOS/"
+
+
+def _apply_darwin_ndi_runtime() -> None:
+    if not os.environ.get("NDI_RUNTIME_DIR_V6"):
+        os.environ["NDI_RUNTIME_DIR_V6"] = _DARWIN_NDI_RUNTIME_V6
+    ndi_lib_dir = _DARWIN_NDI_RUNTIME_V6
+    if os.path.isdir(ndi_lib_dir):
+        existing = os.environ.get("DYLD_FALLBACK_LIBRARY_PATH", "")
+        if ndi_lib_dir not in existing.split(os.pathsep):
+            os.environ["DYLD_FALLBACK_LIBRARY_PATH"] = ndi_lib_dir + (
+                os.pathsep + existing if existing else ""
+            )
+
 
 def _filesystem_package_roots(root: str) -> list[str]:
     """Discover wheel package dirs under the frozen bundle without importing them."""
@@ -86,6 +101,8 @@ def _darwin_user_registry_path() -> str:
 
 def _apply_darwin_frozen_gstreamer_environment(root: str) -> None:
     """macOS bundle layout needs explicit GStreamer paths and no wheel PATH/PYTHONPATH."""
+    _apply_darwin_ndi_runtime()
+
     for key in _FROZEN_SKIP_ENV_KEYS:
         os.environ.pop(key, None)
 
@@ -203,6 +220,8 @@ if getattr(sys, "frozen", False):
     if root:
         _apply_frozen_gstreamer_environment(root)
 else:
+    if sys.platform == "darwin":
+        _apply_darwin_ndi_runtime()
     import gstreamer_libs
 
     gstreamer_libs.setup_python_environment()
