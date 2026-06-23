@@ -98,6 +98,7 @@ def _exclude_problematic_gstreamer_plugins(entries: list) -> list:
 
 
 binaries = _exclude_problematic_gstreamer_plugins(binaries)
+datas = _exclude_problematic_gstreamer_plugins(datas)
 
 
 def _typelib_workdir() -> Path:
@@ -110,7 +111,7 @@ def _typelib_workdir() -> Path:
 def _gstreamer_plugin_dirs_for_build() -> list[str]:
     dirs: list[str] = []
     seen: set[str] = set()
-    for pkg in _gst_packages + ["gstreamer_python"]:
+    for pkg in _gst_packages:
         try:
             root = Path(importlib.import_module(pkg).__file__).resolve().parent
             plugin_dir = root / "lib" / "gstreamer-1.0"
@@ -122,12 +123,12 @@ def _gstreamer_plugin_dirs_for_build() -> list[str]:
     return dirs
 
 
-def _build_bundled_gstreamer_registry() -> Path | None:
-    """Pre-scan plugins at build time so runtime does not fork gst-plugin-scanner."""
+def _verify_gstreamer_build_registry() -> None:
+    """CI-only sanity check; runtime uses a per-user registry (see rthook)."""
     if sys.platform != "darwin":
-        return None
+        return
 
-    registry_path = _typelib_workdir() / "gstreamer_registry.bin"
+    registry_path = _typelib_workdir() / "gstreamer_registry_check.bin"
     registry_path.parent.mkdir(parents=True, exist_ok=True)
     saved_env = {
         key: os.environ.get(key)
@@ -142,13 +143,21 @@ def _build_bundled_gstreamer_registry() -> Path | None:
             "GST_PLUGIN_SCANNER",
         )
     }
+    required = (
+        "videotestsrc",
+        "intervideosrc",
+        "intervideosink",
+        "interaudiosrc",
+        "interaudiosink",
+        "ndisink",
+        "uridecodebin3",
+    )
     try:
         if registry_path.is_file():
             registry_path.unlink()
         os.environ["GST_REGISTRY_1_0"] = str(registry_path)
         os.environ["GST_REGISTRY"] = str(registry_path)
         os.environ["GST_REGISTRY_FORK"] = "no"
-        os.environ["GST_REGISTRY_UPDATE"] = "no"
 
         plugin_dirs = _gstreamer_plugin_dirs_for_build()
         if plugin_dirs:
@@ -171,26 +180,27 @@ def _build_bundled_gstreamer_registry() -> Path | None:
         from gi.repository import Gst
 
         Gst.init(None)
-        # Verify elements the app needs are present in the prebuilt registry.
-        for factory in ("videotestsrc", "ndisink", "uridecodebin3"):
-            if Gst.ElementFactory.find(factory) is None:
-                print(f"Warning: GStreamer registry missing element factory: {factory}")
+        missing = [name for name in required if Gst.ElementFactory.find(name) is None]
+        if missing:
+            raise SystemExit(
+                "GStreamer build registry missing required elements: "
+                + ", ".join(missing)
+            )
+    except SystemExit:
+        raise
     except Exception as exc:
-        print(f"Warning: GStreamer registry prebuild failed: {exc}")
-        return None
+        print(f"Warning: GStreamer build registry check failed: {exc}")
     finally:
         for key, value in saved_env.items():
             if value is None:
                 os.environ.pop(key, None)
             else:
                 os.environ[key] = value
+        if registry_path.is_file():
+            registry_path.unlink()
 
-    return registry_path if registry_path.is_file() else None
 
-
-_bundled_gstreamer_registry = _build_bundled_gstreamer_registry()
-if _bundled_gstreamer_registry is not None:
-    datas.append((str(_bundled_gstreamer_registry), "."))
+_verify_gstreamer_build_registry()
 
 # PyInstaller's pyi_rth_gi hook sets GI_TYPELIB_PATH to gi_typelibs only (after our
 # runtime hook). Mirror wheel typelibs there so Gtk, Gst, GLib, etc. are all found.

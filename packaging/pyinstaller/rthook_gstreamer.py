@@ -61,6 +61,7 @@ _FROZEN_SKIP_ENV_KEYS = frozenset(
 )
 
 _FROZEN_PACKAGE_NAMES = _frozen_gstreamer_packages() + ("gstreamer_python",)
+_PLUGIN_SKIP_PACKAGES = frozenset({"gstreamer_python"})
 
 
 def _filesystem_package_roots(root: str) -> list[str]:
@@ -71,6 +72,16 @@ def _filesystem_package_roots(root: str) -> list[str]:
         if os.path.isdir(candidate):
             roots.append(candidate)
     return roots
+
+
+def _darwin_user_registry_path() -> str:
+    cache_root = os.path.join(
+        os.path.expanduser("~/Library/Caches"),
+        "HLS NDI Player",
+        "gstreamer-1.0",
+    )
+    os.makedirs(cache_root, exist_ok=True)
+    return os.path.join(cache_root, "registry.bin")
 
 
 def _apply_darwin_frozen_gstreamer_environment(root: str) -> None:
@@ -86,21 +97,24 @@ def _apply_darwin_frozen_gstreamer_environment(root: str) -> None:
     xdg_data_dirs: list[str] = []
 
     for package_root in _filesystem_package_roots(root):
+        package_name = os.path.basename(package_root.rstrip(os.sep))
         lib_dir = os.path.join(package_root, "lib")
         if os.path.isdir(lib_dir):
             lib_dirs.append(lib_dir)
 
-        plugin_dir = os.path.join(lib_dir, "gstreamer-1.0")
-        if os.path.isdir(plugin_dir):
-            plugin_dirs.append(plugin_dir)
+        if package_name not in _PLUGIN_SKIP_PACKAGES:
+            plugin_dir = os.path.join(lib_dir, "gstreamer-1.0")
+            if os.path.isdir(plugin_dir):
+                plugin_dirs.append(plugin_dir)
 
         typelib_dir = os.path.join(lib_dir, "girepository-1.0")
         if os.path.isdir(typelib_dir):
             typelib_dirs.append(typelib_dir)
 
-        share_dir = os.path.join(package_root, "share")
-        if os.path.isdir(share_dir):
-            xdg_data_dirs.append(share_dir)
+        if package_name not in _PLUGIN_SKIP_PACKAGES:
+            share_dir = os.path.join(package_root, "share")
+            if os.path.isdir(share_dir):
+                xdg_data_dirs.append(share_dir)
 
     if lib_dirs:
         fallback = os.pathsep.join(dict.fromkeys(lib_dirs))
@@ -122,12 +136,9 @@ def _apply_darwin_frozen_gstreamer_environment(root: str) -> None:
         os.environ["GST_PLUGIN_SCANNER_1_0"] = scanner
         os.environ["GST_PLUGIN_SCANNER"] = scanner
 
-    registry = os.path.join(root, "gstreamer_registry.bin")
-    if os.path.isfile(registry):
-        os.environ["GST_REGISTRY_1_0"] = registry
-        os.environ["GST_REGISTRY"] = registry
-        # Never rescan at runtime: gst-plugin-scanner breaks embedded Python on macOS.
-        os.environ["GST_REGISTRY_UPDATE"] = "no"
+    registry = _darwin_user_registry_path()
+    os.environ["GST_REGISTRY_1_0"] = registry
+    os.environ["GST_REGISTRY"] = registry
 
     if typelib_dirs:
         typelibs = os.pathsep.join(dict.fromkeys(typelib_dirs))

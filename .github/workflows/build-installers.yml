@@ -96,6 +96,13 @@ jobs:
             fi
             echo "Found $name at $path"
           done
+          inter="$(find "$APP" -name 'libgstinter.dylib' -print -quit)"
+          if [ -z "$inter" ]; then
+            echo "Missing GStreamer inter plugin (libgstinter.dylib)"
+            find "$APP" -name 'libgst*.dylib' | head -30
+            exit 1
+          fi
+          echo "Found inter plugin at $inter"
 
       - name: Create DMG
         env:
@@ -153,6 +160,13 @@ jobs:
             fi
             echo "Found $name at $path"
           done
+          inter="$(find "$APP" -name 'libgstinter.dylib' -print -quit)"
+          if [ -z "$inter" ]; then
+            echo "Missing GStreamer inter plugin (libgstinter.dylib)"
+            find "$APP" -name 'libgst*.dylib' | head -30
+            exit 1
+          fi
+          echo "Found inter plugin at $inter"
 
       - name: Create DMG
         env:

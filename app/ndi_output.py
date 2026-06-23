@@ -17,7 +17,9 @@ from app.gst_utils import (
     INTER_VIDEO_CAPS_STR,
     INTER_VIDEO_CHANNEL,
     REQUIRED_NDI_PLUGINS,
+    REQUIRED_PLAYBACK_PLUGINS,
     missing_plugins,
+    try_make_element,
 )
 
 logger = logging.getLogger(__name__)
@@ -50,39 +52,31 @@ class NdiOutputPipeline:
         return self._pipeline
 
     def build(self) -> None:
-        missing = missing_plugins(REQUIRED_NDI_PLUGINS)
+        missing = missing_plugins(REQUIRED_NDI_PLUGINS + REQUIRED_PLAYBACK_PLUGINS)
         if missing:
             raise RuntimeError(
                 "NDI output unavailable — missing GStreamer elements: "
                 + ", ".join(missing)
-                + ". Install NDI GStreamer plugins providing `ndisinkcombiner` and `ndisink`."
+                + ". Reinstall the app or clear "
+                + "~/Library/Caches/HLS NDI Player/gstreamer-1.0/registry.bin "
+                + "and try again."
             )
 
         pipe = Gst.Pipeline.new("ndi_output_pipeline")
 
-        vsrc = Gst.ElementFactory.make("intervideosrc", "ndi_inter_video_src")
-        asrc = Gst.ElementFactory.make("interaudiosrc", "ndi_inter_audio_src")
-        vsrc_caps = Gst.ElementFactory.make("capsfilter", "ndi_inter_video_src_caps")
-        vsrc_caps.set_property("caps", Gst.Caps.from_string(INTER_VIDEO_CAPS_STR))
-        asrc_caps = Gst.ElementFactory.make("capsfilter", "ndi_inter_audio_src_caps")
-        asrc_caps.set_property("caps", Gst.Caps.from_string(INTER_AUDIO_CAPS_STR))
-        vq = Gst.ElementFactory.make("queue", "ndi_video_queue")
-        aq = Gst.ElementFactory.make("queue", "ndi_audio_queue")
-        vconvert = Gst.ElementFactory.make("videoconvert", "ndi_vconvert")
-        vcaps = Gst.ElementFactory.make("capsfilter", "ndi_video_caps")
-        vcaps.set_property("caps", Gst.Caps.from_string("video/x-raw,format=UYVY"))
-
-        combiner = Gst.ElementFactory.make("ndisinkcombiner", "combiner")
-        ndisink = Gst.ElementFactory.make("ndisink", "ndi_sink")
-
-        aconvert = Gst.ElementFactory.make("audioconvert", "ndi_aconvert")
-        aresample = Gst.ElementFactory.make("audioresample", "ndi_aresample")
-        # ndisinkcombiner audio pad expects F32LE interleaved (see gst-inspect-1.0 ndisinkcombiner).
-        acaps = Gst.ElementFactory.make("capsfilter", "ndi_audio_caps")
-        acaps.set_property(
-            "caps",
-            Gst.Caps.from_string("audio/x-raw,format=F32LE,layout=interleaved"),
-        )
+        vsrc = try_make_element(("intervideosrc",), "ndi_inter_video_src")
+        asrc = try_make_element(("interaudiosrc",), "ndi_inter_audio_src")
+        vsrc_caps = try_make_element(("capsfilter",), "ndi_inter_video_src_caps")
+        asrc_caps = try_make_element(("capsfilter",), "ndi_inter_audio_src_caps")
+        vq = try_make_element(("queue",), "ndi_video_queue")
+        aq = try_make_element(("queue",), "ndi_audio_queue")
+        vconvert = try_make_element(("videoconvert",), "ndi_vconvert")
+        vcaps = try_make_element(("capsfilter",), "ndi_video_caps")
+        combiner = try_make_element(("ndisinkcombiner",), "combiner")
+        ndisink = try_make_element(("ndisink",), "ndi_sink")
+        aconvert = try_make_element(("audioconvert",), "ndi_aconvert")
+        aresample = try_make_element(("audioresample",), "ndi_aresample")
+        acaps = try_make_element(("capsfilter",), "ndi_audio_caps")
 
         if not all(
             [
@@ -102,6 +96,14 @@ class NdiOutputPipeline:
             ]
         ):
             raise RuntimeError("Failed to create one or more NDI pipeline elements.")
+
+        vsrc_caps.set_property("caps", Gst.Caps.from_string(INTER_VIDEO_CAPS_STR))
+        asrc_caps.set_property("caps", Gst.Caps.from_string(INTER_AUDIO_CAPS_STR))
+        vcaps.set_property("caps", Gst.Caps.from_string("video/x-raw,format=UYVY"))
+        acaps.set_property(
+            "caps",
+            Gst.Caps.from_string("audio/x-raw,format=F32LE,layout=interleaved"),
+        )
 
         vsrc.set_property("channel", INTER_VIDEO_CHANNEL)
         vsrc.set_property("timeout", sys.maxsize)
