@@ -126,7 +126,6 @@ def _apply_darwin_frozen_gstreamer_environment(root: str) -> None:
     if os.path.isfile(registry):
         os.environ["GST_REGISTRY_1_0"] = registry
         os.environ["GST_REGISTRY"] = registry
-        os.environ["GST_REGISTRY_UPDATE"] = "no"
 
     if typelib_dirs:
         typelibs = os.pathsep.join(dict.fromkeys(typelib_dirs))

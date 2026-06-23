@@ -60,11 +60,14 @@ def ndi_sdk_runtime_probe_error() -> Optional[str]:
 
     pipe = Gst.Pipeline.new("ndi_sdk_probe")
     try:
-        src = Gst.ElementFactory.make("videotestsrc", "probe_src")
-        c = Gst.ElementFactory.make("videoconvert", "probe_vc")
-        cf = Gst.ElementFactory.make("capsfilter", "probe_caps")
-        sink = Gst.ElementFactory.make("ndisink", "probe_ndi")
-        if not all((src, c, cf, sink)):
+        src = try_make_element(("videotestsrc",), "probe_src")
+        c = try_make_element(("videoconvert",), "probe_vc")
+        cf = try_make_element(("capsfilter",), "probe_caps")
+        sink = try_make_element(("ndisink",), "probe_ndi")
+        if src is None:
+            # Probe needs a synthetic video source; skip when the frozen bundle omits it.
+            return None
+        if not all((c, cf, sink)):
             return "Could not build NDI SDK probe pipeline (missing elements)."
         cf.set_property("caps", Gst.Caps.from_string("video/x-raw,format=UYVY"))
         for el in (src, c, cf, sink):
@@ -105,7 +108,10 @@ def ndi_sdk_runtime_probe_error() -> Optional[str]:
 
 def try_make_element(candidates: Iterable[str], name: Optional[str] = None) -> Optional[Gst.Element]:
     for factory in candidates:
-        el = Gst.ElementFactory.make(factory, name)
+        try:
+            el = Gst.ElementFactory.make(factory, name)
+        except Exception:
+            el = None
         if el is not None:
             return el
     return None
