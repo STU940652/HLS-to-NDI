@@ -85,18 +85,19 @@ for _pkg in _gst_packages:
         pass
 
 
-def _exclude_gstpython_plugins(entries: list) -> list:
-    """libgstpython loads an embedded Python during plugin scan and breaks frozen apps."""
+def _exclude_problematic_gstreamer_plugins(entries: list) -> list:
+    """Drop plugins that break frozen macOS (embedded Python, OpenSSL mismatch)."""
+    skip_markers = ("gstpython", "gstcurl")
     filtered: list = []
     for entry in entries:
         source = os.path.basename(str(entry[0])).lower()
-        if "gstpython" in source:
+        if any(marker in source for marker in skip_markers):
             continue
         filtered.append(entry)
     return filtered
 
 
-binaries = _exclude_gstpython_plugins(binaries)
+binaries = _exclude_problematic_gstreamer_plugins(binaries)
 
 
 def _typelib_workdir() -> Path:
@@ -104,6 +105,21 @@ def _typelib_workdir() -> Path:
     if workpath:
         return Path(workpath) / "gi_typelib_work"
     return Path(spec_dir) / "_gi_typelib_work"
+
+
+def _gstreamer_plugin_dirs_for_build() -> list[str]:
+    dirs: list[str] = []
+    seen: set[str] = set()
+    for pkg in _gst_packages + ["gstreamer_python"]:
+        try:
+            root = Path(importlib.import_module(pkg).__file__).resolve().parent
+            plugin_dir = root / "lib" / "gstreamer-1.0"
+            if plugin_dir.is_dir() and str(plugin_dir) not in seen:
+                dirs.append(str(plugin_dir))
+                seen.add(str(plugin_dir))
+        except Exception:
+            pass
+    return dirs
 
 
 def _build_bundled_gstreamer_registry() -> Path | None:
@@ -120,6 +136,10 @@ def _build_bundled_gstreamer_registry() -> Path | None:
             "GST_REGISTRY",
             "GST_REGISTRY_FORK",
             "GST_REGISTRY_UPDATE",
+            "GST_PLUGIN_PATH_1_0",
+            "GST_PLUGIN_SYSTEM_PATH_1_0",
+            "GST_PLUGIN_SCANNER_1_0",
+            "GST_PLUGIN_SCANNER",
         )
     }
     try:
@@ -128,7 +148,22 @@ def _build_bundled_gstreamer_registry() -> Path | None:
         os.environ["GST_REGISTRY_1_0"] = str(registry_path)
         os.environ["GST_REGISTRY"] = str(registry_path)
         os.environ["GST_REGISTRY_FORK"] = "no"
-        os.environ.pop("GST_REGISTRY_UPDATE", None)
+        os.environ["GST_REGISTRY_UPDATE"] = "no"
+
+        plugin_dirs = _gstreamer_plugin_dirs_for_build()
+        if plugin_dirs:
+            plugins = os.pathsep.join(plugin_dirs)
+            os.environ["GST_PLUGIN_PATH_1_0"] = plugins
+            os.environ["GST_PLUGIN_SYSTEM_PATH_1_0"] = plugins
+
+        try:
+            libs_root = Path(importlib.import_module("gstreamer_libs").__file__).resolve().parent
+            scanner = libs_root / "libexec" / "gstreamer-1.0" / "gst-plugin-scanner"
+            if scanner.is_file():
+                os.environ["GST_PLUGIN_SCANNER_1_0"] = str(scanner)
+                os.environ["GST_PLUGIN_SCANNER"] = str(scanner)
+        except Exception:
+            pass
 
         import gi
 
@@ -136,6 +171,10 @@ def _build_bundled_gstreamer_registry() -> Path | None:
         from gi.repository import Gst
 
         Gst.init(None)
+        # Verify elements the app needs are present in the prebuilt registry.
+        for factory in ("videotestsrc", "ndisink", "uridecodebin3"):
+            if Gst.ElementFactory.find(factory) is None:
+                print(f"Warning: GStreamer registry missing element factory: {factory}")
     except Exception as exc:
         print(f"Warning: GStreamer registry prebuild failed: {exc}")
         return None
