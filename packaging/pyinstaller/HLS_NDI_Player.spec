@@ -86,12 +86,14 @@ for _pkg in _gst_packages:
 
 
 def _exclude_problematic_gstreamer_plugins(entries: list) -> list:
-    """Drop plugins that break frozen macOS (embedded Python, OpenSSL mismatch)."""
-    skip_markers = ("gstpython", "gstcurl")
+    """Drop plugins that break frozen macOS or confuse uridecodebin3 HLS."""
     filtered: list = []
     for entry in entries:
         source = os.path.basename(str(entry[0])).lower()
-        if any(marker in source for marker in skip_markers):
+        if "gstpython" in source or "gstcurl" in source:
+            continue
+        # Legacy hlsdemux (libgsthls) is not streams-aware; uridecodebin3 needs hlsdemux2.
+        if source.startswith("libgsthls.") or source == "gsthls.dll":
             continue
         filtered.append(entry)
     return filtered
@@ -151,6 +153,8 @@ def _verify_gstreamer_build_registry() -> None:
         "interaudiosink",
         "ndisink",
         "uridecodebin3",
+        "hlsdemux2",
+        "souphttpsrc",
     )
     try:
         if registry_path.is_file():

@@ -103,6 +103,16 @@ jobs:
             exit 1
           fi
           echo "Found inter plugin at $inter"
+          hls2="$(find "$APP" -name 'libgstadaptivedemux2.dylib' -print -quit)"
+          if [ -z "$hls2" ]; then
+            echo "Missing GStreamer HLS plugin (libgstadaptivedemux2.dylib)"
+            exit 1
+          fi
+          echo "Found HLS demuxer plugin at $hls2"
+          if find "$APP" -name 'libgsthls.dylib' -print -quit | grep -q .; then
+            echo "Legacy libgsthls.dylib must not be bundled (conflicts with uridecodebin3)"
+            exit 1
+          fi
 
       - name: Create DMG
         env:
@@ -167,6 +177,16 @@ jobs:
             exit 1
           fi
           echo "Found inter plugin at $inter"
+          hls2="$(find "$APP" -name 'libgstadaptivedemux2.dylib' -print -quit)"
+          if [ -z "$hls2" ]; then
+            echo "Missing GStreamer HLS plugin (libgstadaptivedemux2.dylib)"
+            exit 1
+          fi
+          echo "Found HLS demuxer plugin at $hls2"
+          if find "$APP" -name 'libgsthls.dylib' -print -quit | grep -q .; then
+            echo "Legacy libgsthls.dylib must not be bundled (conflicts with uridecodebin3)"
+            exit 1
+          fi
 
       - name: Create DMG
         env:

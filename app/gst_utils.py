@@ -31,6 +31,8 @@ REQUIRED_PLAYBACK_PLUGINS = (
     "interaudiosink",
     "intervideosrc",
     "interaudiosrc",
+    "hlsdemux2",
+    "souphttpsrc",
 )
 
 REQUIRED_NDI_PLUGINS = ("ndisinkcombiner", "ndisink")
