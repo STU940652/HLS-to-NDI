@@ -16,8 +16,8 @@ from app.gst_utils import (
     INTER_AUDIO_CHANNEL,
     INTER_VIDEO_CAPS_STR,
     INTER_VIDEO_CHANNEL,
+    REQUIRED_BRIDGE_PLUGINS,
     REQUIRED_NDI_PLUGINS,
-    REQUIRED_PLAYBACK_PLUGINS,
     missing_plugins,
     try_make_element,
 )
@@ -52,13 +52,13 @@ class NdiOutputPipeline:
         return self._pipeline
 
     def build(self) -> None:
-        missing = missing_plugins(REQUIRED_NDI_PLUGINS + REQUIRED_PLAYBACK_PLUGINS)
+        missing = missing_plugins(REQUIRED_NDI_PLUGINS + REQUIRED_BRIDGE_PLUGINS)
         if missing:
             raise RuntimeError(
                 "NDI output unavailable — missing GStreamer elements: "
                 + ", ".join(missing)
                 + ". Reinstall the app or clear "
-                + "~/Library/Caches/HLS NDI Player/gstreamer-1.0/registry.bin "
+                + "~/Library/Caches/HLS NDI Player/gstreamer-1.0/ "
                 + "and try again."
             )
 

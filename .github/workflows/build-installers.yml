@@ -109,6 +109,12 @@ jobs:
             exit 1
           fi
           echo "Found HLS demuxer plugin at $hls2"
+          soup="$(find "$APP" -name 'libgstsoup.dylib' -print -quit)"
+          if [ -z "$soup" ]; then
+            echo "Missing GStreamer HTTP plugin (libgstsoup.dylib)"
+            exit 1
+          fi
+          echo "Found soup plugin at $soup"
           if find "$APP" -name 'libgsthls.dylib' -print -quit | grep -q .; then
             echo "Legacy libgsthls.dylib must not be bundled (conflicts with uridecodebin3)"
             exit 1
@@ -183,6 +189,12 @@ jobs:
             exit 1
           fi
           echo "Found HLS demuxer plugin at $hls2"
+          soup="$(find "$APP" -name 'libgstsoup.dylib' -print -quit)"
+          if [ -z "$soup" ]; then
+            echo "Missing GStreamer HTTP plugin (libgstsoup.dylib)"
+            exit 1
+          fi
+          echo "Found soup plugin at $soup"
           if find "$APP" -name 'libgsthls.dylib' -print -quit | grep -q .; then
             echo "Legacy libgsthls.dylib must not be bundled (conflicts with uridecodebin3)"
             exit 1

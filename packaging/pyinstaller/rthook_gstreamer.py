@@ -89,6 +89,10 @@ def _filesystem_package_roots(root: str) -> list[str]:
     return roots
 
 
+# Bump when bundled GStreamer plugin set changes (forces gst-plugin-scanner rescan).
+_DARWIN_GST_REGISTRY_VERSION = 4
+
+
 def _darwin_user_registry_path() -> str:
     cache_root = os.path.join(
         os.path.expanduser("~/Library/Caches"),
@@ -96,7 +100,16 @@ def _darwin_user_registry_path() -> str:
         "gstreamer-1.0",
     )
     os.makedirs(cache_root, exist_ok=True)
-    return os.path.join(cache_root, "registry.bin")
+    for legacy in (
+        "registry.bin",
+        "registry-v2.bin",
+        "registry-v3.bin",
+    ):
+        try:
+            os.remove(os.path.join(cache_root, legacy))
+        except FileNotFoundError:
+            pass
+    return os.path.join(cache_root, f"registry-v{_DARWIN_GST_REGISTRY_VERSION}.bin")
 
 
 def _apply_darwin_frozen_gstreamer_environment(root: str) -> None:
@@ -134,11 +147,10 @@ def _apply_darwin_frozen_gstreamer_environment(root: str) -> None:
                 xdg_data_dirs.append(share_dir)
 
     if lib_dirs:
-        fallback = os.pathsep.join(dict.fromkeys(lib_dirs))
-        existing = os.environ.get("DYLD_FALLBACK_LIBRARY_PATH", "")
-        os.environ["DYLD_FALLBACK_LIBRARY_PATH"] = fallback + (
-            os.pathsep + existing if existing else ""
-        )
+        libs = os.pathsep.join(dict.fromkeys(lib_dirs))
+        for key in ("DYLD_FALLBACK_LIBRARY_PATH", "DYLD_LIBRARY_PATH"):
+            existing = os.environ.get(key, "")
+            os.environ[key] = libs + (os.pathsep + existing if existing else "")
 
     if plugin_dirs:
         plugins = os.pathsep.join(dict.fromkeys(plugin_dirs))

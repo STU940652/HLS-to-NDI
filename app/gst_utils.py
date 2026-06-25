@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+import os
 import re
 from typing import Iterable, List, Optional
 
@@ -10,7 +12,7 @@ import gi
 gi.require_version("Gst", "1.0")
 from gi.repository import Gst  # noqa: E402
 
-Gst.init(None)
+logger = logging.getLogger(__name__)
 
 # Shared inter-* channel names (must match between playback and NDI pipelines).
 INTER_VIDEO_CHANNEL = "gtk_ndi_player_video"
@@ -18,7 +20,19 @@ INTER_AUDIO_CHANNEL = "gtk_ndi_player_audio"
 INTER_VIDEO_CAPS_STR = "video/x-raw,width=1920,height=1080,framerate=60/1"
 INTER_AUDIO_CAPS_STR = "audio/x-raw,channels=2,rate=48000"
 
-# Minimum plugins required for the full app (NDI plugin may be optional for preview-only testing).
+REQUIRED_BRIDGE_PLUGINS = (
+    "intervideosink",
+    "interaudiosink",
+    "intervideosrc",
+    "interaudiosrc",
+)
+
+# uridecodebin3 + HLS need streams-aware hlsdemux2 and HTTP via soup (not legacy gstcurl).
+REQUIRED_HLS_PLUGINS = (
+    "hlsdemux2",
+    "souphttpsrc",
+)
+
 REQUIRED_PLAYBACK_PLUGINS = (
     "queue",
     "tee",
@@ -27,17 +41,61 @@ REQUIRED_PLAYBACK_PLUGINS = (
     "videoscale",
     "audioconvert",
     "audioresample",
-    "intervideosink",
-    "interaudiosink",
-    "intervideosrc",
-    "interaudiosrc",
-    "hlsdemux2",
-    "souphttpsrc",
+    *REQUIRED_BRIDGE_PLUGINS,
+    *REQUIRED_HLS_PLUGINS,
 )
 
 REQUIRED_NDI_PLUGINS = ("ndisinkcombiner", "ndisink")
 
 NDI_SDK_DOWNLOAD_URL = "https://ndi.video/for-developers/ndi-sdk/download/"
+
+_HLS_GST_PLUGINS = ("adaptivedemux2", "soup")
+
+
+def _load_gstreamer_plugin(plugin_name: str) -> bool:
+    registry = Gst.Registry.get()
+    plugin = registry.find_plugin(plugin_name)
+    if plugin is not None:
+        return True
+    for path_key in ("GST_PLUGIN_PATH_1_0", "GST_PLUGIN_PATH"):
+        for plugin_dir in os.environ.get(path_key, "").split(os.pathsep):
+            if not plugin_dir:
+                continue
+            for suffix in (".dylib", ".so", ".dll"):
+                candidate = os.path.join(plugin_dir, f"libgst{plugin_name}{suffix}")
+                if os.path.isfile(candidate):
+                    try:
+                        loaded = Gst.Plugin.load_file(candidate)
+                    except Exception:
+                        loaded = None
+                    if loaded is not None:
+                        registry.add_plugin(loaded)
+                        return True
+    return False
+
+
+def _ensure_hls_plugins_registered() -> None:
+    missing = missing_plugins(REQUIRED_HLS_PLUGINS)
+    if not missing:
+        return
+    for plugin_name in _HLS_GST_PLUGINS:
+        _load_gstreamer_plugin(plugin_name)
+
+
+def _ensure_gstreamer_initialized() -> None:
+    Gst.init(None)
+    _ensure_hls_plugins_registered()
+    still_missing = missing_plugins(REQUIRED_HLS_PLUGINS)
+    if still_missing:
+        logger.warning(
+            "HLS GStreamer elements unavailable: %s. "
+            "On macOS, delete ~/Library/Caches/HLS NDI Player/gstreamer-1.0/ "
+            "and restart the app.",
+            ", ".join(still_missing),
+        )
+
+
+_ensure_gstreamer_initialized()
 
 
 def plugin_available(factory_name: str) -> bool:
