@@ -52,6 +52,14 @@ NDI_SDK_DOWNLOAD_URL = "https://ndi.video/for-developers/ndi-sdk/download/"
 _HLS_GST_PLUGINS = ("adaptivedemux2", "soup")
 
 
+def plugin_available(factory_name: str) -> bool:
+    return Gst.ElementFactory.find(factory_name) is not None
+
+
+def missing_plugins(names: Iterable[str]) -> List[str]:
+    return [n for n in names if not plugin_available(n)]
+
+
 def _load_gstreamer_plugin(plugin_name: str) -> bool:
     registry = Gst.Registry.get()
     plugin = registry.find_plugin(plugin_name)
@@ -96,14 +104,6 @@ def _ensure_gstreamer_initialized() -> None:
 
 
 _ensure_gstreamer_initialized()
-
-
-def plugin_available(factory_name: str) -> bool:
-    return Gst.ElementFactory.find(factory_name) is not None
-
-
-def missing_plugins(names: Iterable[str]) -> List[str]:
-    return [n for n in names if not plugin_available(n)]
 
 
 def ndi_sdk_runtime_probe_error() -> Optional[str]:

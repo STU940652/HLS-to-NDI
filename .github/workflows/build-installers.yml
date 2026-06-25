@@ -132,7 +132,7 @@ jobs:
           hdiutil create -volname "HLS NDI Player" -srcfolder "$APP" -ov -format UDZO "$DMG"
           ls -la dist
 
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: HLS_NDI_Player-macos
           path: dist/HLS_NDI_Player-*-macOS.dmg
@@ -212,7 +212,7 @@ jobs:
           hdiutil create -volname "HLS NDI Player" -srcfolder "$APP" -ov -format UDZO "$DMG"
           ls -la dist
 
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: HLS_NDI_Player-macos-15-intel
           path: dist/HLS_NDI_Player-*-macOS-15-intel.dmg
@@ -309,7 +309,7 @@ jobs:
 
           Get-Item $msiPath | Format-List *
 
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: HLS_NDI_Player-windows-msi
           path: dist/HLS_NDI_Player-*-windows-x64.msi
