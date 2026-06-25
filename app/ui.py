@@ -1,16 +1,17 @@
-"""GTK 4 user interface: transport controls, timeline, preview, NDI name."""
+"""GTK 4 user interface: transport controls, timeline, preview, settings."""
 
 from __future__ import annotations
 
 import logging
 import sys
+import threading
 from typing import Optional
 
 import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gst", "1.0")
-from gi.repository import GLib, Gtk, Gst  # noqa: E402
+from gi.repository import GLib, GObject, Gtk, Gst  # noqa: E402
 
 from app.gst_utils import (
     NDI_SDK_DOWNLOAD_URL,
@@ -21,6 +22,8 @@ from app.gst_utils import (
 )
 from app.ndi_output import NdiOutputPipeline
 from app.player import PlaybackPipeline
+from app.s3_listing import fetch_stream_urls_from_s3_listing
+from app.settings import AppSettings, DEFAULT_NDI_NAME, load_settings, save_settings
 
 logger = logging.getLogger(__name__)
 
@@ -28,12 +31,77 @@ logger = logging.getLogger(__name__)
 import app.gst_utils  # noqa: F401, E402
 
 
+def _combo_box_dropdown_button(combo: Gtk.ComboBoxText) -> Optional[Gtk.Widget]:
+    entry = combo.get_child()
+    if entry is None:
+        return None
+    box = entry.get_parent()
+    if box is None:
+        return None
+    return box.get_last_child()
+
+
+class SettingsDialog(Gtk.Dialog):
+    def __init__(self, parent: Gtk.Window, settings: AppSettings) -> None:
+        super().__init__(
+            title="Settings",
+            transient_for=parent,
+            modal=True,
+            destroy_with_parent=False,
+        )
+        self.set_default_size(480, -1)
+        self.add_button("_Close", Gtk.ResponseType.CLOSE)
+        self.add_button("_Apply", Gtk.ResponseType.APPLY)
+        self.set_default_response(Gtk.ResponseType.CLOSE)
+
+        content = self.get_content_area()
+        content.set_margin_start(12)
+        content.set_margin_end(12)
+        content.set_margin_top(12)
+        content.set_margin_bottom(12)
+        content.set_spacing(10)
+
+        ndi_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        ndi_row.append(Gtk.Label(label="NDI name:", xalign=0))
+        self._ndi_name = Gtk.Entry()
+        self._ndi_name.set_hexpand(True)
+        self._ndi_name.set_text(settings.ndi_name)
+        self._ndi_name.set_placeholder_text(DEFAULT_NDI_NAME)
+        ndi_row.append(self._ndi_name)
+        content.append(ndi_row)
+
+        s3_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        s3_row.append(Gtk.Label(label="S3 Bucket Listing URI:", xalign=0))
+        self._s3_directory_uri = Gtk.Entry()
+        self._s3_directory_uri.set_hexpand(True)
+        self._s3_directory_uri.set_text(settings.s3_directory_uri)
+        self._s3_directory_uri.set_placeholder_text("<optional>")
+        s3_row.append(self._s3_directory_uri)
+        content.append(s3_row)
+
+        ndi_trademark = Gtk.Label()
+        ndi_trademark.set_markup(
+            '<a href="https://ndi.video/" title="NDI">'
+            "NDI® is a registered trademark of Vizrt NDI AB</a>"
+        )
+        ndi_trademark.set_wrap(True)
+        ndi_trademark.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+        ndi_trademark.set_xalign(0)
+        content.append(ndi_trademark)
+
+    def collect_settings(self) -> AppSettings:
+        ndi_name = self._ndi_name.get_text().strip() or DEFAULT_NDI_NAME
+        s3_directory_uri = self._s3_directory_uri.get_text().strip()
+        return AppSettings(ndi_name=ndi_name, s3_directory_uri=s3_directory_uri)
+
+
 class MainWindow(Gtk.ApplicationWindow):
     def __init__(self, application: Gtk.Application) -> None:
         super().__init__(application=application, title="GTK + GStreamer NDI Player")
         self.set_default_size(1024, 700)
 
-        self._ndi = NdiOutputPipeline(ndi_name="GTK_NDI_Player", on_error=self._on_ndi_error)
+        self._settings = load_settings()
+        self._ndi = NdiOutputPipeline(ndi_name=self._settings.ndi_name, on_error=self._on_ndi_error)
         self._player = PlaybackPipeline(
             on_error=self._on_playback_error,
             on_eos=self._on_eos,
@@ -47,6 +115,8 @@ class MainWindow(Gtk.ApplicationWindow):
         self._seek_debounce_id: int = 0
         self._scale_suppress = False
         self._gtksink_widget: Optional[Gtk.Widget] = None
+        self._url_entry: Optional[Gtk.Entry] = None
+        self._url_dropdown_btn: Optional[Gtk.Widget] = None
 
         self._build_ui()
 
@@ -62,6 +132,22 @@ class MainWindow(Gtk.ApplicationWindow):
 
         self._start_position_timer()
         self.connect("close-request", self._on_close_request)
+        self._refresh_s3_stream_urls()
+
+    def _ensure_url_dropdown_enabled(self) -> None:
+        # Gtk.ComboBoxText disables the arrow when the model is empty; keep it clickable.
+        if self._url_dropdown_btn is not None:
+            self._url_dropdown_btn.set_sensitive(True)
+
+    def _refresh_s3_stream_urls(self) -> None:
+        listing_uri = self._settings.s3_directory_uri.strip()
+        if not listing_uri:
+            return
+        threading.Thread(
+            target=self._fetch_s3_listing_thread,
+            args=(listing_uri,),
+            daemon=True,
+        ).start()
 
     def _build_ui(self) -> None:
         outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
@@ -71,35 +157,23 @@ class MainWindow(Gtk.ApplicationWindow):
         outer.set_margin_bottom(12)
         self.set_child(outer)
 
-        # Top bar: URL + NDI name
+        # Top bar: URL + settings
         top = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         row1 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         row1.append(Gtk.Label(label="Stream URL:"))
-        self._url = Gtk.Entry()
+        self._url = Gtk.ComboBoxText.new_with_entry()
         self._url.set_hexpand(True)
-        self._url.set_text("http://192.168.1.141:8888/demo/master.m3u8")
-        self._url.set_placeholder_text("https://…/playlist.m3u8 or file:///…")
+        self._url_entry = self._url.get_child()
+        self._url_entry.set_placeholder_text("https://…/playlist.m3u8 or file:///…")
+        self._url_dropdown_btn = _combo_box_dropdown_button(self._url)
+        self._ensure_url_dropdown_enabled()
+        if self._url_dropdown_btn is not None:
+            self._url_dropdown_btn.connect("notify::active", self._on_url_dropdown_active)
         row1.append(self._url)
+        settings_btn = Gtk.Button(label="Settings…")
+        settings_btn.connect("clicked", self._on_open_settings)
+        row1.append(settings_btn)
         top.append(row1)
-
-        row2 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        row2.append(Gtk.Label(label="NDI name:"))
-        self._ndi_name = Gtk.Entry()
-        self._ndi_name.set_text("GTK_NDI_Player")
-        self._ndi_name.set_hexpand(True)
-        apply_ndi = Gtk.Button(label="Apply NDI name")
-        apply_ndi.connect("clicked", self._on_apply_ndi_name)
-        row2.append(self._ndi_name)
-        ndi_trademark = Gtk.Label()
-        ndi_trademark.set_markup(
-            '<a href="https://ndi.video/" title="NDI">'
-            "NDI® is a registered trademark of Vizrt NDI AB</a>"
-        )
-        ndi_trademark.set_wrap(True)
-        ndi_trademark.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
-        row2.append(ndi_trademark)
-        row2.append(apply_ndi)
-        top.append(row2)
         outer.append(top)
 
         # Transport
@@ -239,10 +313,69 @@ class MainWindow(Gtk.ApplicationWindow):
 
         GLib.idle_add(_ui)
 
-    def _on_apply_ndi_name(self, _btn: Gtk.Button) -> None:
-        name = self._ndi_name.get_text().strip() or "GTK_NDI_Player"
-        self._ndi.set_ndi_name(name)
-        self._set_status(f"NDI name set to “{name}” (may require NDI pipeline restart to take effect on some plugins).")
+    def _on_open_settings(self, _btn: Gtk.Button) -> None:
+        dialog = SettingsDialog(self, self._settings)
+
+        def on_response(dlg: SettingsDialog, response_id: int) -> None:
+            if response_id == Gtk.ResponseType.APPLY:
+                self._apply_settings(dlg.collect_settings())
+            dlg.destroy()
+
+        dialog.connect("response", on_response)
+        dialog.present()
+
+    def _apply_settings(self, settings: AppSettings) -> None:
+        self._settings = settings
+        try:
+            save_settings(settings)
+        except OSError as exc:
+            self._set_status(f"Could not save settings: {exc}")
+            logger.exception("Failed to save settings")
+            return
+        self._ndi.set_ndi_name(settings.ndi_name)
+        self._set_status(
+            f"Settings saved. NDI name set to “{settings.ndi_name}” "
+            "(may require NDI pipeline restart to take effect on some plugins)."
+        )
+        self._refresh_s3_stream_urls()
+
+    @property
+    def s3_directory_uri(self) -> str:
+        return self._settings.s3_directory_uri
+
+    def _get_stream_url(self) -> str:
+        if self._url_entry is not None:
+            return self._url_entry.get_text()
+        active = self._url.get_active_text()
+        return active or ""
+
+    def _on_url_dropdown_active(self, button: Gtk.Widget, _pspec: GObject.ParamSpec) -> None:
+        if not button.get_active():
+            return
+        self._refresh_s3_stream_urls()
+
+    def _fetch_s3_listing_thread(self, listing_uri: str) -> None:
+        try:
+            urls = fetch_stream_urls_from_s3_listing(listing_uri)
+        except Exception as exc:
+            logger.exception("S3 listing failed for %s", listing_uri)
+            GLib.idle_add(self._set_status, f"S3 listing failed: {exc}")
+            return
+        GLib.idle_add(self._apply_s3_listing_urls, urls)
+
+    def _apply_s3_listing_urls(self, urls: list[str]) -> bool:
+        current = self._get_stream_url()
+        self._url.remove_all()
+        for url in urls:
+            self._url.append_text(url)
+        self._ensure_url_dropdown_enabled()
+        if self._url_entry is not None:
+            self._url_entry.set_text(current)
+        if urls:
+            self._set_status(f"S3 listing: {len(urls)} stream URL(s)")
+        else:
+            self._set_status("S3 listing: no objects found")
+        return False
 
     @staticmethod
     def _normalize_uri(text: str) -> str:
@@ -256,7 +389,7 @@ class MainWindow(Gtk.ApplicationWindow):
         return t
 
     def _on_play(self, _btn: Optional[Gtk.Button] = None) -> None:
-        uri = self._normalize_uri(self._url.get_text())
+        uri = self._normalize_uri(self._get_stream_url())
         if not uri:
             self._set_status("Enter a stream URL")
             return
