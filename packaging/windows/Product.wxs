@@ -26,10 +26,34 @@
       <Directory Id="ProgramFiles64Folder">
         <Directory Id="INSTALLFOLDER" Name="HLS NDI Player" />
       </Directory>
+      <Directory Id="ProgramMenuFolder">
+        <Directory Id="ApplicationProgramsFolder" Name="HLS NDI Player" />
+      </Directory>
     </Directory>
+
+    <Component
+      Id="ApplicationShortcut"
+      Directory="ApplicationProgramsFolder"
+      Guid="8c4e2f1a-9b3d-4e5f-a1c2-3d4e5f607890">
+      <Shortcut
+        Id="ApplicationStartMenuShortcut"
+        Name="HLS NDI Player"
+        Description="GTK + GStreamer HLS to NDI player"
+        Target="[INSTALLFOLDER]HLS_NDI_Player.exe"
+        WorkingDirectory="INSTALLFOLDER" />
+      <RemoveFolder Id="CleanUpApplicationProgramsFolder" Directory="ApplicationProgramsFolder" On="uninstall" />
+      <RegistryValue
+        Root="HKLM"
+        Key="Software\HLS NDI Player"
+        Name="StartMenuShortcut"
+        Type="integer"
+        Value="1"
+        KeyPath="yes" />
+    </Component>
 
     <Feature Id="MainFeature" Title="HLS NDI Player" Level="1">
       <ComponentGroupRef Id="AppFiles" />
+      <ComponentRef Id="ApplicationShortcut" />
     </Feature>
   </Product>
 </Wix>
