@@ -6,6 +6,12 @@ import runpy
 import sys
 from pathlib import Path
 
+_SCRIPT_DIR = Path(__file__).resolve().parent
+if str(_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPT_DIR))
+
+from darwin_lib_dedup import find_duplicate_real_dylibs
+
 
 def _frameworks_dir(app_path: Path) -> Path:
     if sys.platform == "darwin":
@@ -84,6 +90,15 @@ def main() -> int:
         raise SystemExit(f"Missing bundle frameworks dir: {frameworks}")
     if not executable.is_file():
         raise SystemExit(f"Missing bundle executable: {executable}")
+
+    if sys.platform == "darwin":
+        duplicates = find_duplicate_real_dylibs(app_path)
+        if duplicates:
+            raise SystemExit(
+                "Duplicate real dylibs in bundle (causes macOS ObjC class conflicts):\n"
+                + "\n".join(duplicates)
+                + "\nRun packaging/pyinstaller/darwin_lib_dedup.py on the .app first."
+            )
 
     _verify_python_modules(executable)
     _apply_frozen_rthook(frameworks)

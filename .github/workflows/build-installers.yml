@@ -120,6 +120,9 @@ jobs:
             exit 1
           fi
 
+      - name: Normalize duplicate macOS dylibs
+        run: python packaging/pyinstaller/darwin_lib_dedup.py "dist/HLS NDI Player.app"
+
       - name: Verify frozen runtime (HLS plugins and app modules)
         run: python packaging/pyinstaller/verify_frozen_bundle.py "dist/HLS NDI Player.app"
 
@@ -202,6 +205,9 @@ jobs:
             echo "Legacy libgsthls.dylib must not be bundled (conflicts with uridecodebin3)"
             exit 1
           fi
+
+      - name: Normalize duplicate macOS dylibs
+        run: python packaging/pyinstaller/darwin_lib_dedup.py "dist/HLS NDI Player.app"
 
       - name: Verify frozen runtime (HLS plugins and app modules)
         run: python packaging/pyinstaller/verify_frozen_bundle.py "dist/HLS NDI Player.app"

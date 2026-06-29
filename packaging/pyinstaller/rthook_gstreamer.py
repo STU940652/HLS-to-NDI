@@ -90,7 +90,7 @@ def _filesystem_package_roots(root: str) -> list[str]:
 
 
 # Bump when bundled GStreamer plugin set changes (forces gst-plugin-scanner rescan).
-_DARWIN_GST_REGISTRY_VERSION = 5
+_DARWIN_GST_REGISTRY_VERSION = 6
 
 
 def _darwin_user_registry_path() -> str:
@@ -105,6 +105,7 @@ def _darwin_user_registry_path() -> str:
         "registry-v2.bin",
         "registry-v3.bin",
         "registry-v4.bin",
+        "registry-v5.bin",
     ):
         try:
             os.remove(os.path.join(cache_root, legacy))
@@ -113,10 +114,27 @@ def _darwin_user_registry_path() -> str:
     return os.path.join(cache_root, f"registry-v{_DARWIN_GST_REGISTRY_VERSION}.bin")
 
 
+# Preload only HLS plugin dependency dylibs (not every lib — duplicate ObjC classes).
+_DARWIN_HLS_PRELOAD_PREFIXES = ("libsoup",)
+
+
+def _darwin_dylib_stem(filename: str) -> str:
+    import re
+
+    name = filename[:-6] if filename.endswith(".dylib") else filename
+    while True:
+        match = re.match(r"^(.+)-\d+(?:\.\d+)*$", name)
+        if not match:
+            break
+        name = match.group(1)
+    return name
+
+
 def _preload_darwin_dylibs(lib_dirs: list[str]) -> None:
-    """Preload plugin dependency dylibs (e.g. libsoup) before GStreamer scans plugins."""
+    """Preload soup dependency dylibs before GStreamer scans plugins."""
     import ctypes
 
+    loaded_stems: set[str] = set()
     for lib_dir in lib_dirs:
         try:
             names = sorted(os.listdir(lib_dir))
@@ -125,9 +143,17 @@ def _preload_darwin_dylibs(lib_dirs: list[str]) -> None:
         for name in names:
             if not name.endswith(".dylib"):
                 continue
+            if not any(name.startswith(prefix) for prefix in _DARWIN_HLS_PRELOAD_PREFIXES):
+                continue
+            stem = _darwin_dylib_stem(name)
+            if stem in loaded_stems:
+                continue
             path = os.path.join(lib_dir, name)
+            if os.path.islink(path):
+                path = os.path.realpath(path)
             try:
                 ctypes.CDLL(path, mode=ctypes.RTLD_GLOBAL)
+                loaded_stems.add(stem)
             except OSError:
                 pass
 

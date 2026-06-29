@@ -231,6 +231,7 @@ class MainWindow(Gtk.ApplicationWindow):
         self._time_entry = Gtk.Entry()
         self._time_entry.set_placeholder_text("H:MM:SS.mmm or MM:SS.mmm")
         self._time_entry.set_hexpand(True)
+        self._time_entry.connect("activate", self._on_seek_entry)
         go = Gtk.Button(label="Seek")
         go.connect("clicked", self._on_seek_entry)
         jump.append(self._time_entry)
