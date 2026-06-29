@@ -43,7 +43,7 @@
         WorkingDirectory="INSTALLFOLDER" />
       <RemoveFolder Id="CleanUpApplicationProgramsFolder" Directory="ApplicationProgramsFolder" On="uninstall" />
       <RegistryValue
-        Root="HKLM"
+        Root="HKCU"
         Key="Software\HLS NDI Player"
         Name="StartMenuShortcut"
         Type="integer"

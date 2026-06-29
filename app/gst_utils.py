@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import os
-import re
 from typing import Iterable, List, Optional
 
 import gi
@@ -228,11 +227,6 @@ def decode_bin_element(name: str = "decode") -> Gst.Element:
     return el
 
 
-_TIME_RE = re.compile(
-    r"^(?:(?P<h>\d+):)?(?:(?P<m>\d+):)?(?P<s>\d+)(?:\.(?P<ms>\d{1,3}))?$"
-)
-
-
 def parse_time_string(s: str) -> Optional[int]:
     """
     Parse a human time string into nanoseconds.
@@ -241,17 +235,35 @@ def parse_time_string(s: str) -> Optional[int]:
     s = s.strip()
     if not s:
         return None
-    m = _TIME_RE.match(s)
-    if not m:
+
+    parts = s.split(":")
+    if not parts or len(parts) > 3:
         return None
-    h = int(m.group("h") or 0)
-    mi = int(m.group("m") or 0)
-    sec = int(m.group("s"))
-    ms_str = m.group("ms")
-    if ms_str:
+
+    last = parts[-1]
+    if "." in last:
+        sec_str, ms_str = last.split(".", 1)
+        if not sec_str.isdigit() or not ms_str.isdigit():
+            return None
+        sec = int(sec_str)
         ms = int(ms_str.ljust(3, "0")[:3])
     else:
+        if not last.isdigit():
+            return None
+        sec = int(last)
         ms = 0
+
+    if len(parts) == 1:
+        h, mi = 0, 0
+    elif len(parts) == 2:
+        if not parts[0].isdigit():
+            return None
+        h, mi = 0, int(parts[0])
+    else:
+        if not parts[0].isdigit() or not parts[1].isdigit():
+            return None
+        h, mi = int(parts[0]), int(parts[1])
+
     total_sec = h * 3600 + mi * 60 + sec + ms / 1000.0
     return int(total_sec * Gst.SECOND)
 
