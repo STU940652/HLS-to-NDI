@@ -10,7 +10,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_all
+from PyInstaller.utils.hooks import collect_all, collect_submodules
 
 spec_dir = SPECPATH
 repo_root = os.path.abspath(os.path.join(spec_dir, os.pardir, os.pardir))
@@ -460,6 +460,7 @@ hiddenimports = list(
             "gi.repository.cairo",
             "cairo",
             "cairo._cairo",
+            *collect_submodules("app"),
         ]
     )
 )

@@ -120,6 +120,9 @@ jobs:
             exit 1
           fi
 
+      - name: Verify frozen runtime (HLS plugins and app modules)
+        run: python packaging/pyinstaller/verify_frozen_bundle.py "dist/HLS NDI Player.app"
+
       - name: Create DMG
         env:
           PKG_VERSION: ${{ needs.version.outputs.package }}
@@ -200,6 +203,9 @@ jobs:
             exit 1
           fi
 
+      - name: Verify frozen runtime (HLS plugins and app modules)
+        run: python packaging/pyinstaller/verify_frozen_bundle.py "dist/HLS NDI Player.app"
+
       - name: Create DMG
         env:
           PKG_VERSION: ${{ needs.version.outputs.package }}
@@ -251,6 +257,10 @@ jobs:
           if (-not (Test-Path (Join-Path $typelibs "Gst-1.0.typelib"))) {
             throw "Missing Gst typelib in gi_typelibs"
           }
+
+      - name: Verify frozen runtime (HLS plugins and app modules)
+        shell: pwsh
+        run: python packaging/pyinstaller/verify_frozen_bundle.py dist/HLS_NDI_Player
 
       - name: Install WiX Toolset v3.14
         shell: pwsh

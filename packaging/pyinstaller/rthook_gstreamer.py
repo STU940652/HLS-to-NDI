@@ -90,7 +90,7 @@ def _filesystem_package_roots(root: str) -> list[str]:
 
 
 # Bump when bundled GStreamer plugin set changes (forces gst-plugin-scanner rescan).
-_DARWIN_GST_REGISTRY_VERSION = 4
+_DARWIN_GST_REGISTRY_VERSION = 5
 
 
 def _darwin_user_registry_path() -> str:
@@ -104,12 +104,32 @@ def _darwin_user_registry_path() -> str:
         "registry.bin",
         "registry-v2.bin",
         "registry-v3.bin",
+        "registry-v4.bin",
     ):
         try:
             os.remove(os.path.join(cache_root, legacy))
         except FileNotFoundError:
             pass
     return os.path.join(cache_root, f"registry-v{_DARWIN_GST_REGISTRY_VERSION}.bin")
+
+
+def _preload_darwin_dylibs(lib_dirs: list[str]) -> None:
+    """Preload plugin dependency dylibs (e.g. libsoup) before GStreamer scans plugins."""
+    import ctypes
+
+    for lib_dir in lib_dirs:
+        try:
+            names = sorted(os.listdir(lib_dir))
+        except OSError:
+            continue
+        for name in names:
+            if not name.endswith(".dylib"):
+                continue
+            path = os.path.join(lib_dir, name)
+            try:
+                ctypes.CDLL(path, mode=ctypes.RTLD_GLOBAL)
+            except OSError:
+                pass
 
 
 def _apply_darwin_frozen_gstreamer_environment(root: str) -> None:
@@ -147,7 +167,9 @@ def _apply_darwin_frozen_gstreamer_environment(root: str) -> None:
                 xdg_data_dirs.append(share_dir)
 
     if lib_dirs:
-        libs = os.pathsep.join(dict.fromkeys(lib_dirs))
+        unique_lib_dirs = list(dict.fromkeys(lib_dirs))
+        _preload_darwin_dylibs(unique_lib_dirs)
+        libs = os.pathsep.join(unique_lib_dirs)
         for key in ("DYLD_FALLBACK_LIBRARY_PATH", "DYLD_LIBRARY_PATH"):
             existing = os.environ.get(key, "")
             os.environ[key] = libs + (os.pathsep + existing if existing else "")

@@ -60,6 +60,28 @@ def missing_plugins(names: Iterable[str]) -> List[str]:
     return [n for n in names if not plugin_available(n)]
 
 
+def _plugin_file_candidates(plugin_dir: str, plugin_name: str) -> list[str]:
+    candidates: list[str] = []
+    for prefix in ("libgst", "gst"):
+        for suffix in (".dylib", ".so", ".dll"):
+            candidates.append(os.path.join(plugin_dir, f"{prefix}{plugin_name}{suffix}"))
+    return candidates
+
+
+def _scan_plugin_dirs() -> None:
+    registry = Gst.Registry.get()
+    seen: set[str] = set()
+    for path_key in ("GST_PLUGIN_PATH_1_0", "GST_PLUGIN_PATH"):
+        for plugin_dir in os.environ.get(path_key, "").split(os.pathsep):
+            if not plugin_dir or plugin_dir in seen or not os.path.isdir(plugin_dir):
+                continue
+            seen.add(plugin_dir)
+            try:
+                registry.scan_path(plugin_dir)
+            except Exception as exc:
+                logger.debug("GStreamer scan_path failed for %s: %s", plugin_dir, exc)
+
+
 def _load_gstreamer_plugin(plugin_name: str) -> bool:
     registry = Gst.Registry.get()
     plugin = registry.find_plugin(plugin_name)
@@ -69,20 +91,25 @@ def _load_gstreamer_plugin(plugin_name: str) -> bool:
         for plugin_dir in os.environ.get(path_key, "").split(os.pathsep):
             if not plugin_dir:
                 continue
-            for suffix in (".dylib", ".so", ".dll"):
-                candidate = os.path.join(plugin_dir, f"libgst{plugin_name}{suffix}")
-                if os.path.isfile(candidate):
-                    try:
-                        loaded = Gst.Plugin.load_file(candidate)
-                    except Exception:
-                        loaded = None
-                    if loaded is not None:
-                        registry.add_plugin(loaded)
-                        return True
+            for candidate in _plugin_file_candidates(plugin_dir, plugin_name):
+                if not os.path.isfile(candidate):
+                    continue
+                try:
+                    loaded = Gst.Plugin.load_file(candidate)
+                except Exception as exc:
+                    logger.debug("Could not load GStreamer plugin %s: %s", candidate, exc)
+                    loaded = None
+                if loaded is not None:
+                    registry.add_plugin(loaded)
+                    return True
     return False
 
 
 def _ensure_hls_plugins_registered() -> None:
+    missing = missing_plugins(REQUIRED_HLS_PLUGINS)
+    if not missing:
+        return
+    _scan_plugin_dirs()
     missing = missing_plugins(REQUIRED_HLS_PLUGINS)
     if not missing:
         return
