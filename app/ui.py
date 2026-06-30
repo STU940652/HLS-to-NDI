@@ -41,6 +41,20 @@ def _combo_box_dropdown_button(combo: Gtk.ComboBoxText) -> Optional[Gtk.Widget]:
     return box.get_last_child()
 
 
+def _defer_destroy_dialog(dialog: Gtk.Window, refocus: Optional[Gtk.Window] = None) -> None:
+    """Hide and defer destroy to avoid macOS Touch Bar KVO crashes when closing dialogs."""
+    dialog.set_visible(False)
+    focus_target = refocus or dialog.get_transient_for()
+    if focus_target is not None:
+        focus_target.grab_focus()
+
+    def _destroy() -> bool:
+        dialog.destroy()
+        return False
+
+    GLib.idle_add(_destroy)
+
+
 class SettingsDialog(Gtk.Dialog):
     def __init__(self, parent: Gtk.Window, settings: AppSettings) -> None:
         super().__init__(
@@ -89,6 +103,10 @@ class SettingsDialog(Gtk.Dialog):
         ndi_trademark.set_xalign(0)
         content.append(ndi_trademark)
 
+    def sync_from_settings(self, settings: AppSettings) -> None:
+        self._ndi_name.set_text(settings.ndi_name)
+        self._s3_directory_uri.set_text(settings.s3_directory_uri)
+
     def collect_settings(self) -> AppSettings:
         ndi_name = self._ndi_name.get_text().strip() or DEFAULT_NDI_NAME
         s3_directory_uri = self._s3_directory_uri.get_text().strip()
@@ -117,6 +135,7 @@ class MainWindow(Gtk.ApplicationWindow):
         self._gtksink_widget: Optional[Gtk.Widget] = None
         self._url_entry: Optional[Gtk.Entry] = None
         self._url_dropdown_btn: Optional[Gtk.Widget] = None
+        self._settings_dialog: Optional[SettingsDialog] = None
 
         self._build_ui()
 
@@ -272,8 +291,8 @@ class MainWindow(Gtk.ApplicationWindow):
         dialog.set_property("secondary-text", body)
 
         def on_response(dlg: Gtk.MessageDialog, _response_id: int) -> None:
-            dlg.destroy()
             loop.quit()
+            _defer_destroy_dialog(dlg, self)
 
         dialog.connect("response", on_response)
         dialog.present()
@@ -315,15 +334,24 @@ class MainWindow(Gtk.ApplicationWindow):
         GLib.idle_add(_ui)
 
     def _on_open_settings(self, _btn: Gtk.Button) -> None:
-        dialog = SettingsDialog(self, self._settings)
-
-        def on_response(dlg: SettingsDialog, response_id: int) -> None:
-            if response_id == Gtk.ResponseType.APPLY:
-                self._apply_settings(dlg.collect_settings())
-            dlg.destroy()
-
-        dialog.connect("response", on_response)
+        if self._settings_dialog is None:
+            dialog = SettingsDialog(self, self._settings)
+            self._settings_dialog = dialog
+            dialog.connect("response", self._on_settings_response)
+            dialog.connect("destroy", self._on_settings_dialog_destroyed)
+        else:
+            self._settings_dialog.sync_from_settings(self._settings)
+            dialog = self._settings_dialog
         dialog.present()
+
+    def _on_settings_dialog_destroyed(self, _dlg: SettingsDialog) -> None:
+        self._settings_dialog = None
+
+    def _on_settings_response(self, dlg: SettingsDialog, response_id: int) -> None:
+        if response_id == Gtk.ResponseType.APPLY:
+            self._apply_settings(dlg.collect_settings())
+        dlg.set_visible(False)
+        self.grab_focus()
 
     def _apply_settings(self, settings: AppSettings) -> None:
         self._settings = settings

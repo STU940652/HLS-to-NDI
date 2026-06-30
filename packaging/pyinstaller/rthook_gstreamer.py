@@ -158,12 +158,57 @@ def _preload_darwin_dylibs(lib_dirs: list[str]) -> None:
                 pass
 
 
+def _merge_frozen_wheel_environments(skip_keys: frozenset[str] | None = None) -> None:
+    """Merge gstreamer wheel environment dicts (TLS, GIO modules, typelibs, etc.)."""
+    skip = skip_keys or _FROZEN_SKIP_ENV_KEYS
+    env = os.environ.copy()
+    for name in _frozen_gstreamer_packages():
+        try:
+            module = importlib.import_module(name)
+        except ImportError:
+            continue
+        for key, value in getattr(module, "environment", {}).items():
+            if key in skip:
+                continue
+            if sys.platform == "darwin" and key in ("LD_LIBRARY_PATH", "PATH", "PYGI_DLL_DIRS"):
+                continue
+            if sys.platform == "win32" and key == "LD_LIBRARY_PATH":
+                continue
+            _prepend_to_env(env, key, value)
+    os.environ.update(env)
+
+
+def _apply_darwin_tls_environment(root: str) -> None:
+    """Point GIO/libsoup at bundled CA certs and TLS backend modules (required for HTTPS)."""
+    cert_candidates = (
+        os.path.join(root, "gstreamer_libs", "etc", "ssl", "certs", "ca-certificates.crt"),
+        os.path.join(root, "gstreamer_plugins_libs", "etc", "ssl", "certs", "ca-certificates.crt"),
+    )
+    for cert in cert_candidates:
+        if os.path.isfile(cert):
+            os.environ.setdefault("SSL_CERT_FILE", cert)
+            os.environ.setdefault("CURL_CA_BUNDLE", cert)
+            break
+
+    gio_modules = os.path.join(root, "gstreamer_plugins_libs", "lib", "gio", "modules")
+    if os.path.isdir(gio_modules):
+        existing = os.environ.get("GIO_EXTRA_MODULES", "")
+        parts = [p for p in existing.split(os.pathsep) if p]
+        if gio_modules not in parts:
+            os.environ["GIO_EXTRA_MODULES"] = gio_modules + (
+                os.pathsep + existing if existing else ""
+            )
+
+
 def _apply_darwin_frozen_gstreamer_environment(root: str) -> None:
     """macOS bundle layout needs explicit GStreamer paths and no wheel PATH/PYTHONPATH."""
     _apply_darwin_ndi_runtime()
 
     for key in _FROZEN_SKIP_ENV_KEYS:
         os.environ.pop(key, None)
+
+    _merge_frozen_wheel_environments()
+    _apply_darwin_tls_environment(root)
 
     os.environ["GST_REGISTRY_FORK"] = "no"
 
@@ -233,24 +278,13 @@ def _apply_frozen_gstreamer_environment(root: str) -> None:
         _apply_darwin_frozen_gstreamer_environment(root)
         return
 
+    _merge_frozen_wheel_environments()
+
     env = os.environ.copy()
     dll_directories: list[str] = []
-
-    for name in _frozen_gstreamer_packages():
-        try:
-            module = importlib.import_module(name)
-        except ImportError:
-            continue
-        for key, value in getattr(module, "environment", {}).items():
-            if key in _FROZEN_SKIP_ENV_KEYS:
-                continue
-            if sys.platform == "win32" and key == "LD_LIBRARY_PATH":
-                continue
-            if sys.platform == "win32" and key == "PATH" and isinstance(value, str):
-                for entry in value.split(os.pathsep):
-                    if entry and entry != ".":
-                        dll_directories.append(entry)
-            _prepend_to_env(env, key, value)
+    for entry in os.environ.get("PATH", "").split(os.pathsep):
+        if entry and entry != ".":
+            dll_directories.append(entry)
 
     # gstreamer_python paths without importing its package (broken when gi is flattened).
     gp_root = os.path.join(root, "gstreamer_python")
@@ -271,7 +305,7 @@ def _apply_frozen_gstreamer_environment(root: str) -> None:
         os.environ.pop(key, None)
 
     if sys.platform == "win32":
-        for path in dll_directories:
+        for path in dict.fromkeys(dll_directories):
             _register_windows_dll_dir(path)
 
 

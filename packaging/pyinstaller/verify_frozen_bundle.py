@@ -53,6 +53,22 @@ def _verify_python_modules(executable: Path) -> None:
         )
 
 
+def _verify_darwin_tls_environment() -> None:
+    cert = os.environ.get("SSL_CERT_FILE", "")
+    if not cert or not os.path.isfile(cert):
+        raise SystemExit(
+            "Frozen bundle missing TLS CA configuration (SSL_CERT_FILE). "
+            "Ensure gstreamer_libs/etc/ssl/certs/ca-certificates.crt is bundled."
+        )
+    gio_modules = os.environ.get("GIO_EXTRA_MODULES", "")
+    module_dirs = [p for p in gio_modules.split(os.pathsep) if p and os.path.isdir(p)]
+    if not module_dirs:
+        raise SystemExit(
+            "Frozen bundle missing GIO TLS modules (GIO_EXTRA_MODULES). "
+            "Ensure gstreamer_plugins_libs/lib/gio/modules is bundled."
+        )
+
+
 def _verify_hls_elements() -> None:
     import gi
 
@@ -102,6 +118,8 @@ def main() -> int:
 
     _verify_python_modules(executable)
     _apply_frozen_rthook(frameworks)
+    if sys.platform == "darwin":
+        _verify_darwin_tls_environment()
     _verify_hls_elements()
     print("Frozen bundle verification passed.")
     return 0
