@@ -103,6 +103,31 @@ binaries = _exclude_problematic_gstreamer_plugins(binaries)
 datas = _exclude_problematic_gstreamer_plugins(datas)
 
 
+def _collect_gio_tls_modules() -> None:
+    """collect_all often omits lib/gio/modules; souphttpsrc needs them for HTTPS."""
+    seen: set[tuple[str, str]] = set()
+    for pkg in ("gstreamer_plugins_libs", "gstreamer_libs"):
+        try:
+            root = Path(importlib.import_module(pkg).__file__).resolve().parent
+            modules_dir = root / "lib" / "gio" / "modules"
+            if not modules_dir.is_dir():
+                continue
+            for mod in sorted(modules_dir.iterdir()):
+                if mod.suffix not in (".dylib", ".so", ".dll"):
+                    continue
+                dest = f"{pkg}/lib/gio/modules"
+                key = (mod.name, dest)
+                if key in seen:
+                    continue
+                seen.add(key)
+                binaries.append((str(mod), dest))
+        except Exception:
+            pass
+
+
+_collect_gio_tls_modules()
+
+
 def _typelib_workdir() -> Path:
     workpath = globals().get("WORKPATH")
     if workpath:

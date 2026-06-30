@@ -125,9 +125,10 @@ jobs:
             exit 1
           fi
           echo "Found CA certificates at $cert"
-          gio_mod="$(find "$APP" -path '*/gio/modules/*.dylib' -print -quit)"
+          gio_mod="$(find "$APP" \( -path '*/lib/gio/modules/*.dylib' -o -path '*/lib/gio/modules/*.so' \) -print -quit)"
           if [ -z "$gio_mod" ]; then
-            echo "Missing GIO TLS modules (lib/gio/modules/*.dylib)"
+            echo "Missing GIO TLS modules (lib/gio/modules)"
+            find "$APP" -path '*/gio/*' | head -20
             exit 1
           fi
           echo "Found GIO TLS module at $gio_mod"
@@ -223,9 +224,10 @@ jobs:
             exit 1
           fi
           echo "Found CA certificates at $cert"
-          gio_mod="$(find "$APP" -path '*/gio/modules/*.dylib' -print -quit)"
+          gio_mod="$(find "$APP" \( -path '*/lib/gio/modules/*.dylib' -o -path '*/lib/gio/modules/*.so' \) -print -quit)"
           if [ -z "$gio_mod" ]; then
-            echo "Missing GIO TLS modules (lib/gio/modules/*.dylib)"
+            echo "Missing GIO TLS modules (lib/gio/modules)"
+            find "$APP" -path '*/gio/*' | head -20
             exit 1
           fi
           echo "Found GIO TLS module at $gio_mod"

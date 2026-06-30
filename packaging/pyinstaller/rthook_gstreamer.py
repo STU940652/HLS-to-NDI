@@ -178,26 +178,44 @@ def _merge_frozen_wheel_environments(skip_keys: frozenset[str] | None = None) ->
     os.environ.update(env)
 
 
+def _bundle_search_roots(frameworks_root: str) -> list[str]:
+    """PyInstaller macOS .app stores datas under Contents/Resources, binaries under Frameworks."""
+    roots = [frameworks_root]
+    parent = os.path.dirname(frameworks_root)
+    resources = os.path.join(parent, "Resources")
+    if os.path.isdir(resources):
+        roots.append(resources)
+    return roots
+
+
 def _apply_darwin_tls_environment(root: str) -> None:
     """Point GIO/libsoup at bundled CA certs and TLS backend modules (required for HTTPS)."""
-    cert_candidates = (
-        os.path.join(root, "gstreamer_libs", "etc", "ssl", "certs", "ca-certificates.crt"),
-        os.path.join(root, "gstreamer_plugins_libs", "etc", "ssl", "certs", "ca-certificates.crt"),
-    )
-    for cert in cert_candidates:
-        if os.path.isfile(cert):
-            os.environ.setdefault("SSL_CERT_FILE", cert)
-            os.environ.setdefault("CURL_CA_BUNDLE", cert)
+    for search_root in _bundle_search_roots(root):
+        for pkg in ("gstreamer_libs", "gstreamer_plugins_libs"):
+            cert = os.path.join(
+                search_root, pkg, "etc", "ssl", "certs", "ca-certificates.crt"
+            )
+            if os.path.isfile(cert):
+                os.environ.setdefault("SSL_CERT_FILE", cert)
+                os.environ.setdefault("CURL_CA_BUNDLE", cert)
+                break
+        if os.environ.get("SSL_CERT_FILE"):
             break
 
-    gio_modules = os.path.join(root, "gstreamer_plugins_libs", "lib", "gio", "modules")
-    if os.path.isdir(gio_modules):
-        existing = os.environ.get("GIO_EXTRA_MODULES", "")
-        parts = [p for p in existing.split(os.pathsep) if p]
-        if gio_modules not in parts:
-            os.environ["GIO_EXTRA_MODULES"] = gio_modules + (
-                os.pathsep + existing if existing else ""
-            )
+    for search_root in _bundle_search_roots(root):
+        for pkg in ("gstreamer_plugins_libs", "gstreamer_libs"):
+            gio_modules = os.path.join(search_root, pkg, "lib", "gio", "modules")
+            if not os.path.isdir(gio_modules):
+                continue
+            existing = os.environ.get("GIO_EXTRA_MODULES", "")
+            parts = [p for p in existing.split(os.pathsep) if p]
+            if gio_modules not in parts:
+                os.environ["GIO_EXTRA_MODULES"] = gio_modules + (
+                    os.pathsep + existing if existing else ""
+                )
+            break
+        if os.environ.get("GIO_EXTRA_MODULES"):
+            break
 
 
 def _apply_darwin_frozen_gstreamer_environment(root: str) -> None:
